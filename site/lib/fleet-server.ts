@@ -9,6 +9,7 @@ import {currentDocumentPolicy} from './document-server';
 import {defaultDocumentPolicy} from './document-policy';
 import {assessLateFee,defaultLateFeePolicy} from './late-fees';
 import {defaultCareGuide} from './care-guide';
+import {privateStorageConfigured} from './private-customer-store';
 
 export const TERMS_VERSION='rental-v1';
 export const PREPARATION_BUFFER_MS=3*60*60*1000;
@@ -184,7 +185,7 @@ export async function reserve(input:Input,manual=false,unitId='',customerId=''){
 export async function adminData(){
  const raw=await all<BookingRow>('SELECT * FROM reservations ORDER BY start_ms DESC');
  const deliveries=await all<{reservation_id:string;kind:string;status:string;updated_ms:number}>(`SELECT reservation_id,kind,status,updated_ms FROM reservation_document_deliveries WHERE kind IN ('reservation','pickup_confirmation') ORDER BY updated_ms DESC`);
- return {server_now_ms:Date.now(),models:await catalogRows(true),units:await all<UnitRow&{model_name:string}>('SELECT u.*,m.name model_name FROM units u JOIN rental_models m ON m.id=u.model_id ORDER BY m.name,u.ordinal'),reservations:raw.map(row=>({...booking(row),unit_id:row.unit_id,external_customer_system:(row as unknown as Record<string,unknown>).external_customer_system,external_customer_ref:(row as unknown as Record<string,unknown>).external_customer_ref,documents_delivery:deliveries.filter(item=>item.reservation_id===row.id).map(({kind,status,updated_ms})=>({kind,status,updated_ms}))})),blocks:await all('SELECT * FROM blocks ORDER BY start_ms DESC'),settings:await legacy.config()};
+ return {auth_mode:(env as Cloudflare.Env&{CALORI_AUTH_MODE?:string}).CALORI_AUTH_MODE==='password'?'password':'hosting',server_now_ms:Date.now(),models:await catalogRows(true),units:await all<UnitRow&{model_name:string}>('SELECT u.*,m.name model_name FROM units u JOIN rental_models m ON m.id=u.model_id ORDER BY m.name,u.ordinal'),reservations:raw.map(row=>({...booking(row),unit_id:row.unit_id,external_customer_system:(row as unknown as Record<string,unknown>).external_customer_system,external_customer_ref:(row as unknown as Record<string,unknown>).external_customer_ref,documents_delivery:deliveries.filter(item=>item.reservation_id===row.id).map(({kind,status,updated_ms})=>({kind,status,updated_ms}))})),blocks:await all('SELECT * FROM blocks ORDER BY start_ms DESC'),settings:await legacy.config()};
 }
 export async function saveModel(input:Input){
  if(!validId(input.id))throw new HttpError(400,'Identificador do modelo inválido.');
@@ -234,7 +235,10 @@ export async function saveUnit(input:Input){
  return {ok:true,id:result.id};
 }
 
-export const saveSettings=legacy.saveSettings;
+export async function saveSettings(input:Record<string,unknown>){
+ if((env as Cloudflare.Env&{CALORI_AUTH_MODE?:string}).CALORI_AUTH_MODE==='password'&&input.rentals_enabled===true&&!privateStorageConfigured())throw new HttpError(409,'Configure uma chave CUSTOMER_DATA_KEY válida no Worker antes de liberar as reservas com cadastro completo.');
+ return legacy.saveSettings(input);
+}
 export async function addBlock(input:Input){
  const a=Date.parse(String(input.start||'')),b=Date.parse(String(input.end||''));
  if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)throw new HttpError(400,'Informe um período válido para o bloqueio.');

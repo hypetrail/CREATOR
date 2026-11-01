@@ -57,3 +57,8 @@ RETURN_REMINDER_MINUTES=120
 # WhatsApp: one approved utility template for reservation text parts.
 # Body parameters, in order: reservation code, section/part title, section text.
 WHATSAPP_TEMPLATE_RENTAL=
+
+# Cloudflare production only: create in Worker Settings > Variables and Secrets.
+# ADMIN_SETUP_KEY: temporary secret of at least 32 characters; remove after setup.
+# CUSTOMER_DATA_KEY: generated in /admin/configuracao; preserve for recovery.
+# Do not copy FLEET_OWNER_ID from local development into production.

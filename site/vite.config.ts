@@ -1,6 +1,8 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
+import productionConfig from "./wrangler.json";
+import {cloudflareProductionConfig} from "./scripts/cloudflare-config.mjs";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
 import { connectorPreview } from "./build/connector-preview-plugin.mjs";
@@ -13,6 +15,7 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
+const productionTarget=process.env.CALORI_DEPLOY_TARGET==='cloudflare';
 
 const localBindingConfig = {
   main: "./build/sites-worker.ts",
@@ -55,6 +58,7 @@ export default defineConfig(async ({ command }) => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    define: {__CALORI_CLOUDFLARE__: JSON.stringify(productionTarget)},
     server: {
       ...(managedLinux
         ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] }
@@ -65,13 +69,22 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
       vinext(),
-      sites({ mockAuth: !managedLinux }),
+      sites({ mockAuth: !managedLinux&&!productionTarget }),
       connectorPreview(),
       cloudflare({
+        configPath: productionTarget?'./wrangler.json':'./wrangler.local.json',
         persistState: {path: process.env.CALORI_LOCAL_STATE_PATH || '.wrangler/state'},
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: {
+        config: (config) => {
+          if(productionTarget){
+            // The plugin merges returned arrays by concatenation. Mutate the
+            // resolved config here so DB and cron each have a single binding.
+            const production=cloudflareProductionConfig(productionConfig);
+            Object.assign(config,production,{topLevelName:production.name});
+            return;
+          }
+          return {
           ...localBindingConfig,
           ...(command === "build" ? {triggers: {crons: ["*/5 * * * *"]}} : {}),
           ...(command === "serve"
@@ -85,6 +98,7 @@ export default defineConfig(async ({ command }) => {
                 ],
               }
             : {}),
+          };
         },
         ...(command === "serve"
           ? {

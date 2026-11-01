@@ -408,3 +408,8 @@ test('release cannot announce pickup during the prior return preparation or an u
  sqlite.prepare('UPDATE unit_safety_holds SET resolved_ms=? WHERE id=?').run(Date.now(),hold);
  assert.equal((await fleet.updateReservation(afterPreparation)).reservation.status,'ready');
 });
+
+test('Cloudflare production refuses to open full-identification reservations before encryption is configured',async(t)=>{
+ await fixture({enabled:false});const savedKey=environment.CUSTOMER_DATA_KEY;t.after(()=>{delete environment.CALORI_AUTH_MODE;if(savedKey===undefined)delete environment.CUSTOMER_DATA_KEY;else environment.CUSTOMER_DATA_KEY=savedKey;});environment.CALORI_AUTH_MODE='password';delete environment.CUSTOMER_DATA_KEY;
+ const input={address:'Endereço do teste',whatsapp:'19999999999',coverage:'Condições de teste',protection_enabled:false,protection_daily_cents:1500,rentals_enabled:true};await assert.rejects(()=>fleet.saveSettings(input),e=>e.status===409);environment.CUSTOMER_DATA_KEY='c1'.repeat(32);assert.equal((await fleet.saveSettings(input)).rentals_enabled,true);
+});

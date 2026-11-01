@@ -1,11 +1,13 @@
-# Calori Go — site com WhatsApp
+# Calori Go — publicação pelo painel Cloudflare
 
-T1 sem seleção de cor; cinco unidades no mesmo estoque. Cadastro completo com e-mail opcional e acesso por celular e senha. Multa: descontar duas horas; cobrar cada hora iniciada pela diária total dividida por 24, arredondando centavos só no total. Valores e regras antigas preservados.
+Abra **site/docs/PUBLICAR-CLOUDFLARE-PELO-PAINEL.md** para publicar pelo GitHub e Cloudflare Workers, sem upload de ZIP e sem terminal.
 
-WhatsApp oficial preparado para mensagens de texto com identificação, período, valores, especificações, condições e cuidados; também preparação, retirada e devolução. Falta conectar a conta Business, número/API e template aprovado. Não houve envio externo real.
+Configuração do painel: branch **entrega/site-whatsapp-2026-11-01**, diretório raiz **site**, build **npm run build:cloudflare**, publicação **npm run deploy:cloudflare**. Crie o D1 **calori-go-db** e informe seu Database ID real em **CALORI_D1_DATABASE_ID** nas variáveis de build. A publicação aplica as migrações.
 
-Fotos de vistoria podem permanecer no computador; o site registra apenas referências, com confirmação da equipe. PDF e armazenamento de arquivos são opcionais neste fluxo. O cadastro completo continua exigindo banco e chave de criptografia protegidos.
+O administrador tem login próprio por senha. O primeiro acesso é autorizado pelo segredo provisório **ADMIN_SETUP_KEY**, cadastrado no painel Cloudflare. A chave deve ser removida depois da criação da senha. A tela **/admin/configuracao** orienta a gerar e guardar a chave **CUSTOMER_DATA_KEY** do cadastro completo.
 
-Guia atualizado: site/docs/FLUXO-SITE-WHATSAPP.md. Aplicar também a migração 0009, preservando qualquer base existente. Configuração local não equivale a publicação. Não há app ou PWA nesta entrega.
+T1 sem escolha pública de cor, cinco unidades, cadastro completo com e-mail opcional, celular e senha para clientes, mensagens WhatsApp preparadas e fotos de vistoria no computador. PDF e R2 são opcionais nesta fase. A API WhatsApp ainda precisa ser conectada para envios reais.
 
-O pacote exclui credenciais, bancos de teste, dependências instaladas e arquivos de execução local.
+Validação: 160 testes aprovados, TypeScript e build de produção aprovados, Wrangler dry-run e fluxo real do Worker no navegador. Nenhuma publicação na conta Cloudflare, migração remota ou mensagem externa foi realizada nesta sessão. Consulte **site/docs/VALIDACAO-CLOUDFLARE.md**.
+
+Segredos, bancos de teste, dependências instaladas e arquivos de execução local não fazem parte desta entrega. Não substitua a chave de criptografia de uma base existente.

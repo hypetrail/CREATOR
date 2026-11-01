@@ -2,6 +2,8 @@ import handler from "vinext/server/fetch-handler";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
 import { processNotifications } from "../lib/notification-server";
+import {adminPasswordBoundary,type AdminEnvironment} from "../lib/admin-password-server";
+declare const __CALORI_CLOUDFLARE__: boolean;
 
 export default {
   scheduled(_controller: ScheduledController, _env: Cloudflare.Env, ctx: ExecutionContext) {
@@ -10,7 +12,12 @@ export default {
       console.error("CALORI_NOTIFICATION_SCHEDULE_FAILED");
     }));
   },
-  fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
+  async fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
+    if(__CALORI_CLOUDFLARE__){
+      const result=await adminPasswordBoundary(request,env as AdminEnvironment);
+      if(result instanceof Response)return result;
+      request=result;
+    }
     let binding = ctx.props?.CONNECTORS;
     // Local preview emulates the same request-scoped capability. This branch and
     // the auxiliary service binding are absent from production builds.

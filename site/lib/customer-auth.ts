@@ -59,6 +59,7 @@ async function verifyPassword(value:string,encoded:string){
  if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||parts[1]!==String(PASSWORD_ITERATIONS)||!/^([a-f0-9]{64})$/.test(parts[2])||!/^([a-f0-9]{64})$/.test(parts[3]))return false;
  return equals(await derive(value,fromHex(parts[2])),parts[3]);
 }
+export {verifyPassword as verifyCustomerPassword};
 const dummyHash=`pbkdf2-sha256$${PASSWORD_ITERATIONS}$${'0'.repeat(64)}$${'0'.repeat(64)}`;
 function toIdentity(row:CustomerRow):CustomerIdentity{
  return {id:row.id,phone:row.phone,phone_verified:row.phone_verified===1,created_ms:row.created_ms,operational_whatsapp:row.service_consent===1,marketing_whatsapp:row.marketing_consent===1};

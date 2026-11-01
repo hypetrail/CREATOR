@@ -1,5 +1,7 @@
 # Operação, cadastro e documentos da Calori Go
 
+> Para publicar pelo painel Cloudflare com o GitHub, siga [Publicação no Cloudflare](PUBLICAR-CLOUDFLARE-PELO-PAINEL.md). O build de produção usa autenticação administrativa própria; o login local do ChatGPT continua exclusivo do desenvolvimento.
+
 > Atualização vigente: consulte [Fluxo do site e WhatsApp](FLUXO-SITE-WHATSAPP.md). A T1 não tem escolha pública de cor, o e-mail é opcional, o cadastro continua completo e o atraso desconta duas horas antes da cobrança por hora iniciada. Referências anteriores divergentes abaixo são históricas.
 
 Esta entrega contém o código e a validação local da nova estrutura. A publicação e a conexão real aos serviços de comunicação são etapas distintas; nenhum envio real ou deploy deve ser presumido.

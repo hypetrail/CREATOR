@@ -18,7 +18,7 @@ type Unit = {id:string; model_id:string; color:string; label:string; identifier:
 type Reservation = {id:string; code:string; model_name:string; unit_id:string; unit_label?:string; color?:string; start_ms:number; end_ms:number; days:number; daily_cents:number; total_cents:number; insurance:string; insurance_included?:boolean; terms_snapshot?:string; status:ReservationStatus; payment_status:'pending'|'paid';actual_start_ms?:number|null;actual_end_ms?:number|null;due_ms?:number|null;late_fee_cents?:number;late_fee_status?:string;preparation_buffer_ms?:number};
 type Block = {id:string; unit_id:string; start_ms:number; end_ms:number; reason:string; kind:'maintenance'|'blocked'};
 type Settings = {address:string; whatsapp:string; coverage:string; protection_enabled:boolean; protection_daily_cents:number; rentals_enabled:boolean};
-type AdminData = {models:Model[]; units:Unit[]; reservations:Reservation[]; blocks:Block[]; settings:Settings;server_now_ms?:number;safety_holds?:{id:string;unit_id:string;reason:string}[]};
+type AdminData = {auth_mode?:string;models:Model[]; units:Unit[]; reservations:Reservation[]; blocks:Block[]; settings:Settings;server_now_ms?:number;safety_holds?:{id:string;unit_id:string;reason:string}[]};
 type ModelDraft = Omit<Model,'daily_cents'|'quantity'|'active'> & {daily:string; active:boolean};
 type UnitDraft = Omit<Unit,'id'> & {id?:string};
 const statuses:Record<UnitStatus,string> = {available:'Em operação', maintenance:'Em manutenção', blocked:'Bloqueada', retired:'Fora de operação'};
@@ -110,7 +110,7 @@ export default function FleetAdmin() {
   };
 
   return <div className="fa-app">
-    <header className="fa-header"><Link href="/" className="fa-brand">Calori <span>Go</span><small>PAINEL DA EMPRESA</small></Link><Link href="/" className="fa-link">Ver site de locação ↗</Link></header>
+    <header className="fa-header"><Link href="/" className="fa-brand">Calori <span>Go</span><small>PAINEL DA EMPRESA</small></Link><nav>{data?.auth_mode==='password'&&<><a className="fa-link" href="/admin/configuracao">Configuração do acesso</a> <a className="fa-link" href="/admin/sair">Sair</a> </>}<Link href="/" className="fa-link">Ver site de locação ↗</Link></nav></header>
     <main className="fa-main">
       <div className="fa-title"><div><span className="fa-kicker">CONTROLE DA OPERAÇÃO</span><h1>Sua frota. Seu controle.</h1><p>Um administrador controla a frota, as vistorias, as retiradas, as manutenções e os registros da operação.</p></div><button type="button" className="fa-button fa-secondary" disabled={busy} onClick={refresh}>Atualizar dados</button></div>
       {error&&<div className="fa-alert" role="alert">{error}<button type="button" aria-label="Fechar aviso" onClick={()=>setError('')}>×</button></div>}

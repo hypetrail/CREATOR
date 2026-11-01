@@ -1,5 +1,7 @@
 # Fluxo atual do site: T1 e WhatsApp
 
+> Para publicar pelo painel Cloudflare com o GitHub, siga [Publicação no Cloudflare](PUBLICAR-CLOUDFLARE-PELO-PAINEL.md). O build de produção usa autenticação administrativa própria; o login local do ChatGPT continua exclusivo do desenvolvimento.
+
 Esta atualização substitui as referências anteriores a cinco cores, multa de meia diária e envio obrigatório por e-mail. O foco é o site; não há aplicativo nativo ou PWA criado nesta etapa.
 
 ## Frota e cliente

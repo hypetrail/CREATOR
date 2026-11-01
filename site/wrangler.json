@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "calori-go",
+  "main": "build/sites-worker.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {"binding": "ASSETS"},
+  "vars": {"CALORI_AUTH_MODE": "password"},
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "calori-go-db",
+    "database_id": "00000000-0000-4000-8000-000000000000",
+    "migrations_dir": "drizzle"
+  }],
+  "triggers": {"crons": ["*/5 * * * *"]}
+}
