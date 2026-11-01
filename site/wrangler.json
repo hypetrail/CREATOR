@@ -9,7 +9,7 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "calori-go-db",
-    "database_id": "00000000-0000-4000-8000-000000000000",
+    "database_id": "87762edb-d9b6-4dd7-bb72-9c3cc58329e4",
     "migrations_dir": "drizzle"
   }],
   "triggers": {"crons": ["*/5 * * * *"]}

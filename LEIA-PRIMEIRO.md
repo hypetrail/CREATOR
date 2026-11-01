@@ -2,7 +2,7 @@
 
 Abra **site/docs/PUBLICAR-CLOUDFLARE-PELO-PAINEL.md** para publicar pelo GitHub e Cloudflare Workers, sem upload de ZIP e sem terminal.
 
-Configuração do painel: branch **entrega/site-whatsapp-2026-11-01**, diretório raiz **site**, build **npm run build:cloudflare**, publicação **npm run deploy:cloudflare**. Crie o D1 **calori-go-db** e informe seu Database ID real em **CALORI_D1_DATABASE_ID** nas variáveis de build. A publicação aplica as migrações.
+Configuração do painel: branch **entrega/site-whatsapp-2026-11-01**, diretório raiz **site**, build **npm run build:cloudflare**, publicação **npm run deploy:cloudflare**. O D1 **calori-go-db** já está configurado com o Database ID fornecido pelo proprietário. A variável de build **CALORI_D1_DATABASE_ID** é opcional e só precisa ser usada para substituir esse banco. A publicação aplica as migrações.
 
 O administrador tem login próprio por senha. O primeiro acesso é autorizado pelo segredo provisório **ADMIN_SETUP_KEY**, cadastrado no painel Cloudflare. A chave deve ser removida depois da criação da senha. A tela **/admin/configuracao** orienta a gerar e guardar a chave **CUSTOMER_DATA_KEY** do cadastro completo.
 

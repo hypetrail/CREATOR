@@ -8,7 +8,7 @@ A configuração desta entrega mantém o catálogo público e usa um login próp
 
 1. No Cloudflare, abra **Storage & Databases → D1 → Create database**.
 2. Nome sugerido: **calori-go-db**.
-3. Conclua a criação e copie o **Database ID**.
+3. Conclua a criação e copie o **Database ID**. O ID informado pelo proprietário já foi configurado nesta entrega: `87762edb-d9b6-4dd7-bb72-9c3cc58329e4`. Se esse é o seu banco, não precisa repetir a criação.
 
 O Database ID identifica o recurso e não é uma senha. Não crie tabelas nem importe um banco de testes. O comando de publicação aplica as migrações em ordem, incluindo a `0010_admin_password_auth.sql`, e registra o que já foi aplicado. Se usar um banco existente, preserve backup antes de atualizar.
 
@@ -37,17 +37,19 @@ Antes de executar a primeira publicação, adicione nas configurações **de bui
 
 | Nome | Valor |
 | --- | --- |
-| `CALORI_D1_DATABASE_ID` | O Database ID real copiado na etapa 1 |
 | `NODE_VERSION` | `24` |
 
-Se escolheu nomes diferentes, adicione também:
+O Database ID já está no `wrangler.json`. Não é necessário cadastrar `CALORI_D1_DATABASE_ID` para este banco. Se essa variável já existir no painel, use o mesmo ID acima ou remova a variável para utilizar a configuração do repositório.
+
+Se escolheu nomes diferentes ou mudar o banco, adicione também:
 
 | Nome opcional | Quando usar |
 | --- | --- |
+| `CALORI_D1_DATABASE_ID` | Quando quiser substituir o banco configurado no repositório |
 | `CALORI_D1_DATABASE_NAME` | Quando o banco não se chama `calori-go-db` |
 | `CALORI_WORKER_NAME` | Quando o Worker não se chama `calori-go` |
 
-São identificadores de implantação, sem senhas. A configuração no GitHub contém um identificador provisório intencionalmente inválido: o build recusa publicá-lo até receber o Database ID real. Os scripts geram uma única conexão **DB** e um único agendamento de cinco minutos.
+São identificadores de implantação, sem senhas. A configuração no GitHub já contém o Database ID fornecido pelo proprietário. O build continua recusando identificadores inválidos ou provisórios. Os scripts geram uma única conexão **DB** e um único agendamento de cinco minutos.
 
 O deploy executa o Wrangler em duas etapas: aplica as migrações no D1 indicado e publica o Worker compilado em `dist/server/wrangler.json`. A conta/token de deploy usada pelo Cloudflare precisa poder publicar Workers e aplicar migrações D1; o acesso ao GitHub sozinho não concede essa permissão no Cloudflare.
 
