@@ -1,0 +1,59 @@
+# Desenvolvimento local apenas. Não publique este override de identidade.
+# A produção deve usar o proprietário autenticado pela hospedagem confiável.
+FLEET_OWNER_ID=local_seedy
+
+# Geração/armazenamento de identificação e PDFs privados.
+# Segredo exclusivo de 32 bytes, em 64 caracteres hexadecimais ou base64.
+# Nunca trocar numa base existente sem migrar os dados criptografados.
+# CUSTOMER_DATA_KEY=
+
+# HMAC dos códigos de confirmação e recuperação por WhatsApp (>=32 caracteres).
+# CUSTOMER_OTP_SECRET=
+
+# E-mail escolhido. As credenciais OAuth ficam em segredos da hospedagem.
+RESERVATION_EMAIL_PROVIDER=gmail
+RESERVATION_EMAIL_FROM=calori.mobi2@gmail.com
+# GMAIL_CLIENT_ID=
+# GMAIL_CLIENT_SECRET=
+# GMAIL_REFRESH_TOKEN=
+
+# WhatsApp Business Cloud API. Use versão vigente e templates realmente
+# aprovados na conta da empresa. Não há nomes/credenciais presumidos.
+# WHATSAPP_ACCESS_TOKEN=
+# WHATSAPP_PHONE_NUMBER_ID=
+# WHATSAPP_API_VERSION=
+WHATSAPP_TEMPLATE_LANGUAGE=pt_BR
+# WHATSAPP_TEMPLATE_AUTH=
+# WHATSAPP_TEMPLATE_PREPARING=
+# WHATSAPP_TEMPLATE_READY=
+# WHATSAPP_TEMPLATE_RETURN_REMINDER=
+# WHATSAPP_TEMPLATE_AVAILABILITY=
+# WHATSAPP_TEMPLATE_CARE=
+# WHATSAPP_TEMPLATE_INSPECTION=
+# Número de destino do arquivo da empresa, aceito pela conta Meta utilizada.
+# Não presumir que o número remetente pode receber mensagens de si mesmo.
+# INSPECTION_ARCHIVE_PHONE=
+
+# URL pública HTTPS real, utilizada nos avisos e no link do guia de cuidados.
+# APP_PUBLIC_URL=https://seu-dominio.example
+# Alternativa específica para os links das mensagens:
+# WHATSAPP_SITE_URL=https://seu-dominio.example
+RETURN_REMINDER_MINUTES=120
+
+# Necessário apenas para invocar POST /api/notifications por agendador HTTP.
+# O scheduled() nativo do Worker é acionado pela hospedagem, sem este bearer.
+# NOTIFY_CRON_SECRET=
+
+# Integração externa opcional; o novo cadastro completo pode ficar no site.
+# CUSTOMER_API_URL=https://seu-sistema.example/api
+# CUSTOMER_SYSTEM_NAME=seu-sistema
+# CUSTOMER_API_TOKEN=
+
+# Alternativa de e-mail para domínio próprio verificado, não endereço Gmail.
+# RESERVATION_EMAIL_PROVIDER=resend
+# RESERVATION_EMAIL_FROM=CaloriMob <reservas@seu-dominio-verificado.example>
+# RESEND_API_KEY=
+
+# WhatsApp: one approved utility template for reservation text parts.
+# Body parameters, in order: reservation code, section/part title, section text.
+WHATSAPP_TEMPLATE_RENTAL=
