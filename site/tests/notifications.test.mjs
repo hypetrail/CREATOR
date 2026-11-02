@@ -24,7 +24,7 @@ function fixture({state='ready',verified=1,service=1,marketing=0,configured:enab
  CREATE TABLE blocks (id text PRIMARY KEY,unit_id text,start_ms integer,end_ms integer);
  CREATE TABLE unit_safety_holds (id text PRIMARY KEY,unit_id text,resolved_ms integer);
  CREATE TABLE reservations (id text PRIMARY KEY,code text,customer_id text,model_name text,color_name text,status text,start_ms integer,end_ms integer,actual_start_ms integer,actual_end_ms integer,due_ms integer,pickup_ms integer,ready_ms integer,terms_snapshot text,unit_id text);`);
- sqlite.exec(schemas);sqlite.exec(readFileSync('drizzle/0006_document_delivery_tracking.sql','utf8'));environment.DB=adapter(sqlite);
+ sqlite.exec(schemas);sqlite.exec(readFileSync('drizzle/0006_document_delivery_tracking.sql','utf8'));sqlite.exec(readFileSync('drizzle/0011_minimal_reservation_contacts.sql','utf8'));environment.DB=adapter(sqlite);
  sqlite.prepare('INSERT INTO customers (id,phone,phone_verified,service_consent,marketing_consent) VALUES (?,?,?,?,?)').run('customer-1','5519999999999',verified,service,marketing);
  sqlite.prepare('INSERT INTO rental_models VALUES (?,?,?,?)').run('t1','T1',1,3000);sqlite.prepare('INSERT INTO units VALUES (?,?,?)').run('unit-1','t1','available');
  const now=Date.now();if(state)sqlite.prepare('INSERT INTO reservations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run('reservation-1','CG-TEST','customer-1','T1','Azul',state,now+HOUR,now+49*HOUR,state==='rented'?now-DAY:null,null,state==='rented'?now+HOUR:null,now+HOUR,now-1000,JSON.stringify({address:'Endereço da reserva'}),'unit-1');
@@ -156,6 +156,18 @@ test('missing operational templates do not block a configured availability templ
 test('cron rejects missing configuration and anonymous requests and accepts a secret-protected invocation',async()=>{
  fixture({state:null});const request=authorization=>new Request('https://calori.example/api/notifications',{method:'POST',headers:authorization?{Authorization:authorization}:{}});
  assert.equal((await cron.POST(request())).status,503);environment.NOTIFY_CRON_SECRET='x'.repeat(32);assert.equal((await cron.POST(request())).status,401);assert.equal((await cron.POST(request('Bearer wrong'))).status,401);assert.equal((await cron.POST(request('Bearer '+'x'.repeat(32)))).status,200);
+});
+
+test('runtime cron preserves old account campaigns without dispatching or creating them',async t=>{
+ fixture({state:null,marketing:1});const calls=mockProvider(t);
+ await queue.saveNotificationSettings({auto_availability:true});
+ await queue.enqueueAvailabilityCampaign();
+ const before=sqlite.prepare('SELECT * FROM customer_notifications').all();
+ environment.NOTIFY_CRON_SECRET='x'.repeat(32);
+ const response=await cron.POST(new Request('https://calori.example/api/notifications',{method:'POST',headers:{Authorization:'Bearer '+'x'.repeat(32)}}));
+ assert.equal(response.status,200);assert.equal(calls.length,0);
+ assert.deepEqual(sqlite.prepare('SELECT * FROM customer_notifications').all(),before);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_contacts').get().n,0);
 });
 
 test('marketing frequency counts actual submission, including an old event delayed by missing credentials',async t=>{

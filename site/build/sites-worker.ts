@@ -1,13 +1,13 @@
 import handler from "vinext/server/fetch-handler";
 import { runWithConnectorBinding } from "../lib/connector-context";
 import type { ConnectorBinding } from "../lib/connector-contract.mjs";
-import { processNotifications } from "../lib/notification-server";
+import { processOperationalNotifications } from "../lib/notification-server";
 import {adminPasswordBoundary,type AdminEnvironment} from "../lib/admin-password-server";
 declare const __CALORI_CLOUDFLARE__: boolean;
 
 export default {
   scheduled(_controller: ScheduledController, _env: Cloudflare.Env, ctx: ExecutionContext) {
-    ctx.waitUntil(processNotifications({limit: 20}).catch(() => {
+    ctx.waitUntil(processOperationalNotifications({limit: 20}).catch(() => {
       // Do not log provider errors, tokens, recipients or document contents.
       console.error("CALORI_NOTIFICATION_SCHEDULE_FAILED");
     }));

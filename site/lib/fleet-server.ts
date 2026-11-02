@@ -9,7 +9,7 @@ import {currentDocumentPolicy} from './document-server';
 import {defaultDocumentPolicy} from './document-policy';
 import {assessLateFee,defaultLateFeePolicy} from './late-fees';
 import {defaultCareGuide} from './care-guide';
-import {privateStorageConfigured} from './private-customer-store';
+import {validateMinimalContact,createMinimalContactStatement} from './reservation-contact-server';
 
 export const TERMS_VERSION='rental-v1';
 export const PREPARATION_BUFFER_MS=3*60*60*1000;
@@ -127,7 +127,7 @@ async function pricedQuote(input:Input){
  // Included insurance follows the saved document conditions, not unrelated
  // optional-package descriptions from the legacy catalogue.
  if(policy.insurance_included)settings.coverage=document.clauses.insurance;
- const snapshot=JSON.stringify({contact_mode:'whatsapp',vehicle_spec:{power:priced.spec.power,range:priced.spec.range,capacity:priced.spec.capacity,capacity_exclusive:priced.spec.capacity_exclusive,battery:priced.spec.battery,charge:priced.spec.charge},document,...(row.id==='t1'?{care_guide:defaultCareGuide}:{}),preparation_buffer_ms:PREPARATION_BUFFER_MS,contract_duration_ms:p.end-p.start,late_fee_policy:defaultLateFeePolicy,delay_daily_cents:charges.daily_cents+charges.protection_daily_cents,version:TERMS_VERSION,payment:'Pagamento exclusivamente na retirada; pendente.',minimum_hours:(policy.single_day_enabled?1:policy.minimum_days)*24,standard_minimum_hours:policy.minimum_days*24,single_day_hours:policy.single_day_enabled?24:null,period:`Diárias de 24 horas; frações adicionais contam nova diária. Mínimo de ${policy.minimum_days} diárias${policy.single_day_enabled?'; diária única disponível na tarifa própria':''}.`,pricing:{base_daily_cents:row.daily_cents,...policy},coverage:charges.insurance==='none'?'Sem seguro adicional.':settings.coverage,address:settings.address,whatsapp:settings.whatsapp});
+ const snapshot=JSON.stringify({contact_mode:'whatsapp_minimal',vehicle_spec:{power:priced.spec.power,range:priced.spec.range,capacity:priced.spec.capacity,capacity_exclusive:priced.spec.capacity_exclusive,battery:priced.spec.battery,charge:priced.spec.charge},document,...(row.id==='t1'?{care_guide:defaultCareGuide}:{}),preparation_buffer_ms:PREPARATION_BUFFER_MS,contract_duration_ms:p.end-p.start,late_fee_policy:defaultLateFeePolicy,delay_daily_cents:charges.daily_cents+charges.protection_daily_cents,version:TERMS_VERSION,payment:'Pagamento exclusivamente na retirada; pendente.',minimum_hours:(policy.single_day_enabled?1:policy.minimum_days)*24,standard_minimum_hours:policy.minimum_days*24,single_day_hours:policy.single_day_enabled?24:null,period:`Diárias de 24 horas; frações adicionais contam nova diária. Mínimo de ${policy.minimum_days} diárias${policy.single_day_enabled?'; diária única disponível na tarifa própria':''}.`,pricing:{base_daily_cents:row.daily_cents,...policy},coverage:charges.insurance==='none'?'Sem seguro adicional.':settings.coverage,address:settings.address,whatsapp:settings.whatsapp});
  return {...charges,start_ms:p.start,end_ms:p.end,model_id:row.id,model_name:row.name,color:variant.id,color_name:JSON.parse(row.spec).color_selection===false?'':variant.name,settings,terms_version:TERMS_VERSION,pricing_policy:policy,document_policy:document,terms_token:await termsToken(snapshot),_terms_snapshot:snapshot,_settings_revision:current.revision,_document_version:storedDocument.version,_model_spec:row.spec};
 }
 export async function quote(input:Input){
@@ -138,13 +138,16 @@ export async function quote(input:Input){
 }
 
 export async function reserve(input:Input,manual=false,unitId='',customerId=''){
- const allowed=new Set(['model_id','color','start','end','insurance','request_key','expected_daily_cents','expected_total_cents','terms_version','terms_accepted','expected_terms_token']);
- if(Object.keys(input).some(key=>!allowed.has(key)))throw new HttpError(400,'Envie somente os dados operacionais da reserva. Dados pessoais permanecem no navegador.');
+ const allowed=new Set(['model_id','color','start','end','insurance','request_key','expected_daily_cents','expected_total_cents','terms_version','terms_accepted','expected_terms_token','contact','whatsapp_consent']);
+ const minimalContact=input.contact!==undefined?validateMinimalContact(input.contact):null;
+ if(minimalContact&&input.whatsapp_consent!==true)throw new HttpError(400,'Autorize as mensagens operacionais desta reserva.');
+ if(Object.keys(input).some(key=>!allowed.has(key)))throw new HttpError(400,'Envie somente os dados operacionais da reserva. Envie somente WhatsApp e nome opcional, junto aos dados da locação.');
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input.request_key)))throw new HttpError(400,'Identificador da solicitação inválido.');
  if(input.terms_version!==TERMS_VERSION||input.terms_accepted!==true)throw new HttpError(400,'Leia e aceite as condições da reserva.');
  if(typeof input.expected_terms_token!=='string'||!/^[0-9a-f]{64}$/.test(input.expected_terms_token))throw new HttpError(400,'Atualize o resumo e aceite as condições atuais.');
  const parsed=fleetPeriod({daily_cents:null,spec:{pricing:{minimum_days:1}}},String(input.start||''),String(input.end||''));
- const fingerprint=JSON.stringify([input.model_id,input.color,parsed.start,parsed.end,input.insurance??'none',input.expected_daily_cents,input.expected_total_cents,input.terms_version,input.expected_terms_token,...(customerId?['customer',customerId]:[]),...(manual?['manual',unitId]:[])]);
+ const contactFingerprint=minimalContact?await termsToken(JSON.stringify([minimalContact.phone,minimalContact.name])):'';
+ const fingerprint=JSON.stringify([input.model_id,input.color,parsed.start,parsed.end,input.insurance??'none',input.expected_daily_cents,input.expected_total_cents,input.terms_version,input.expected_terms_token,...(minimalContact?['contact',contactFingerprint]:[]),...(customerId?['customer',customerId]:[]),...(manual?['manual',unitId]:[])]);
  const replay=async()=>{
   const row=await first<BookingRow>('SELECT * FROM reservations WHERE request_key=?',[input.request_key]);
   if(!row)return null;
@@ -160,7 +163,7 @@ export async function reserve(input:Input,manual=false,unitId='',customerId=''){
  const id=crypto.randomUUID(),code='CG-'+crypto.randomUUID().replaceAll('-','').slice(0,16).toUpperCase();
  let row:BookingRow|null;
  try{
- row=await first<BookingRow>(`INSERT INTO reservations (id,code,request_key,unit_id,model_id,model_name,start_ms,end_ms,days,daily_cents,protection_daily_cents,total_cents,name,phone,email,city,payment_method,payment_status,status,created_ms,insurance,cleaning_prepaid_cents,color,color_name,unit_label,terms_version,terms_snapshot,request_fingerprint,source,customer_id)
+ const allocation=stmt(`INSERT INTO reservations (id,code,request_key,unit_id,model_id,model_name,start_ms,end_ms,days,daily_cents,protection_daily_cents,total_cents,name,phone,email,city,payment_method,payment_status,status,created_ms,insurance,cleaning_prepaid_cents,color,color_name,unit_label,terms_version,terms_snapshot,request_fingerprint,source,customer_id)
  SELECT ?,?,?,u.id,m.id,m.name,?,?,?,?,?,?,'','','','','pickup','pending','reserved',?,?,0,u.color,?,u.label,?,?,?,?,?
  FROM units u JOIN rental_models m ON m.id=u.model_id
  WHERE m.id=? AND m.active=1 AND m.daily_cents=? AND m.spec=? AND u.color=? AND u.status='available' AND (?='' OR u.id=?)
@@ -172,6 +175,10 @@ export async function reserve(input:Input,manual=false,unitId='',customerId=''){
  AND NOT EXISTS (SELECT 1 FROM unit_safety_holds h WHERE h.unit_id=u.id AND h.resolved_ms IS NULL)
  AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.unit_id=u.id AND ${occupancyConflict('r','?','?',String(PREPARATION_BUFFER_MS),'?')})
  AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.unit_id=u.id AND b.start_ms<(?+${PREPARATION_BUFFER_MS}) AND b.end_ms>?) ORDER BY u.ordinal LIMIT 1 RETURNING *`,[id,code,input.request_key,q.start_ms,q.end_ms,q.days,q.daily_cents,q.protection_daily_cents,q.total_cents,Date.now(),q.insurance,q.color_name,TERMS_VERSION,snapshot,fingerprint,manual?'manual':'website',customerId,q.model_id,q.base_daily_cents,q._model_spec,q.color,unitId,unitId,manual?1:0,q._settings_revision,q._document_version,q.protection_daily_cents,q.insurance_included?1:0,Date.now(),q.end_ms,q.start_ms,q.end_ms,q.start_ms,q.end_ms,q.start_ms]);
+ if(minimalContact){
+  await db().batch([allocation,createMinimalContactStatement(id,minimalContact,true)]);
+  row=await first<BookingRow>('SELECT * FROM reservations WHERE id=?',[id]);
+ }else row=await allocation.first<BookingRow>();
  }catch(error){
   // Two identical retries may reach the unique constraint together.
   const result=await replay();if(result)return {...result,settings:q.settings};
@@ -235,10 +242,7 @@ export async function saveUnit(input:Input){
  return {ok:true,id:result.id};
 }
 
-export async function saveSettings(input:Record<string,unknown>){
- if((env as Cloudflare.Env&{CALORI_AUTH_MODE?:string}).CALORI_AUTH_MODE==='password'&&input.rentals_enabled===true&&!privateStorageConfigured())throw new HttpError(409,'Configure uma chave CUSTOMER_DATA_KEY válida no Worker antes de liberar as reservas com cadastro completo.');
- return legacy.saveSettings(input);
-}
+export const saveSettings=legacy.saveSettings;
 export async function addBlock(input:Input){
  const a=Date.parse(String(input.start||'')),b=Date.parse(String(input.end||''));
  if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)throw new HttpError(400,'Informe um período válido para o bloqueio.');
@@ -255,7 +259,7 @@ export async function addBlock(input:Input){
 
 export const deleteBlock=legacy.deleteBlock;
 export async function createManualReservation(input:Input){
- const allowed=new Set(['model_id','unit_id','color','start','end','insurance','request_key','expected_daily_cents','expected_total_cents','terms_version','terms_accepted','expected_terms_token','customer_id']);
+ const allowed=new Set(['model_id','unit_id','color','start','end','insurance','request_key','expected_daily_cents','expected_total_cents','terms_version','terms_accepted','expected_terms_token','customer_id','contact','whatsapp_consent']);
  if(Object.keys(input).some(key=>!allowed.has(key)))throw new HttpError(400,'Registre somente dados operacionais.');
  const unit=await first<UnitRow>('SELECT * FROM units WHERE id=?',[input.unit_id]);
  if(!unit||unit.model_id!==input.model_id||unit.color!==input.color)throw new HttpError(400,'Escolha a unidade correta da frota.');

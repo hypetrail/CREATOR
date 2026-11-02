@@ -155,7 +155,16 @@ test('API protects administration, rejects cross-site mutations and keeps public
  assert.equal((await route.POST(post(request(),{Origin:'https://other.test'}))).status,403);
  assert.equal((await route.POST(post(request(),{'sec-fetch-site':'cross-site'}))).status,403);
  assert.equal((await route.POST(post({padding:'x'.repeat(70_000)}))).status,413);
- assert.equal((await route.POST(post(request()))).status,200);
+ assert.equal((await route.POST(post(request()))).status,400);
+ assert.equal((await route.POST(post(request({contact:{phone:'123'},whatsapp_consent:true})))).status,400);
+ assert.equal((await route.POST(post(request({contact:{phone:'19999999999'},whatsapp_consent:false})))).status,400);
+ assert.equal((await route.POST(post(request({contact:{phone:'19999999999',cpf:'52998224725'},whatsapp_consent:true})))).status,400);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,0);
+ const response=await route.POST(post(request({contact:{phone:'(19) 99999-9999'},whatsapp_consent:true})));
+ assert.equal(response.status,200);assert.equal((await response.json()).contact_saved,true);
+ const contact=sqlite.prepare('SELECT * FROM reservation_contacts').get();assert.equal(contact.phone,'5519999999999');assert.equal(contact.name,'');
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_customer_data').get().n,0);
 });
 test('legacy creation is retired without reseeding the former fleet or losing historical queries',async()=>{
  await fixture();const request=new Request('https://fleet.test/api/rental/reservations',{method:'POST',headers:{'oai-authenticated-user-id':'owner','Content-Type':'application/json'},body:JSON.stringify({customer:{name:'Personal data'}})});
@@ -205,6 +214,24 @@ test('manual reservation selects a physical unit while public bookings are disab
  assert.throws(()=>workflow.reservationMessage(b,'ready','fallback'),/não foi liberada/);
  assert.equal((await fleet.availability(start,end)).models[0].colors.find(c=>c.id==='branca').available,0);
  const anonymous=await route.POST(new Request('https://example.test/api/fleet/admin/manual-reservation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)}));assert.equal(anonymous.status,401);
+});
+test('manual API validates consent and the minimal contact before allocating a unit without customer accounts',async()=>{
+ await fixture();await fleet.saveSettings({...((await fleet.catalog()).settings),rentals_enabled:false});
+ const q=await fleet.quote({model_id:'t1',color:'branca',start,end,insurance:'none'});
+ const input=request({color:'branca',unit_id:'t1-002',expected_terms_token:q.terms_token,contact:{phone:'11988887777'},whatsapp_consent:true});
+ const post=body=>new Request('https://fleet.test/api/fleet/admin/manual-reservation',{method:'POST',headers:{'Content-Type':'application/json','oai-authenticated-user-id':'owner'},body:JSON.stringify(body)});
+ assert.equal((await route.POST(post({...input,contact:undefined}))).status,400);
+ assert.equal((await route.POST(post({...input,whatsapp_consent:false}))).status,400);
+ assert.equal((await route.POST(post({...input,customer_id:'former-account'}))).status,400);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,0);
+ const response=await route.POST(post(input));assert.equal(response.status,200);const b=await response.json();
+ assert.equal(b.source,'manual');assert.equal(b.unit_label,'T1 · 002');assert.equal(b.account_linked,false);assert.equal(b.contact_saved,true);assert.equal(b.delivery_token,undefined);
+ assert.equal(sqlite.prepare('SELECT phone FROM reservation_contacts WHERE reservation_id=?').get(b.id).phone,'5511988887777');
+ const jobs=sqlite.prepare('SELECT COUNT(*) n FROM reservation_document_deliveries WHERE reservation_id=?').get(b.id).n;assert.ok(jobs>1);
+ const retry=await route.POST(post(input));assert.equal(retry.status,200);assert.equal((await retry.json()).code,b.code);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_contacts').get().n,1);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_document_deliveries WHERE reservation_id=?').get(b.id).n,jobs);
+ for(const table of ['customers','customer_sessions','reservation_customer_data','reservation_private_documents'])assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM '+table).get().n,0);
 });
 const documents=await compile('lib/document-server.ts');
 const documentPolicy=await compile('lib/document-policy.ts');
@@ -268,38 +295,60 @@ function mockDelivery(t,{ambiguous=false}={}){
  };
  t.after(()=>{globalThis.fetch=originalFetch;resetDeliveryEnvironment();});return calls;
 }
-test('document capability expires, rejects other tokens and does not put personal data in the reservation DB',async()=>{
- await fixture();const b=await fleet.reserve(request());
- assert.ok(b.delivery_token);assert.equal((await fleet.adminData()).reservations[0].delivery_token,undefined);
+test('retired full-identification and email endpoints return 410 without changing historical records or sending',async t=>{
+ await fixture();configureGmail();const calls=mockDelivery(t),b=await fleet.reserve(request());
+ const historical={reservation_id:b.id,customer_id:'',envelope:'historical-encrypted-envelope',created_ms:Date.now()};
+ sqlite.prepare('INSERT INTO reservation_customer_data (reservation_id,customer_id,envelope,created_ms) VALUES (?,?,?,?)').run(...Object.values(historical));
  const body={reservation_id:b.id,delivery_token:b.delivery_token,customer:deliveryCustomer};
- assert.equal((await route.POST(deliveryRequest('documents/send',{...body,delivery_token:crypto.randomUUID()}))).status,403);
- assert.equal((await route.POST(deliveryRequest('documents/send',body,false))).status,200);
+ for(const token of [b.delivery_token,crypto.randomUUID()]){
+  const response=await route.POST(deliveryRequest('documents/send',{...body,delivery_token:token}));assert.equal(response.status,410);assert.match((await response.json()).error,/encerrad/i);
+ }
  assert.equal((await route.POST(deliveryRequest('admin/documents/send',{reservation_id:b.id,kind:'reservation'}))).status,401);
- assert.equal((await route.POST(deliveryRequest('documents/send',{...body,kind:'pickup_confirmation'}))).status,400);
- const response=await route.POST(deliveryRequest('documents/send',body));assert.equal((await response.json()).status,'not_configured');
+ assert.equal((await route.POST(deliveryRequest('admin/documents/send',{reservation_id:b.id,kind:'reservation'},true))).status,410);
+ assert.equal((await route.POST(deliveryRequest('admin/customer-data',{reservation_id:b.id,customer:deliveryCustomer},true))).status,410);
+ assert.deepEqual({...sqlite.prepare('SELECT * FROM reservation_customer_data WHERE reservation_id=?').get(b.id)},historical);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_contacts').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_private_documents').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_document_deliveries').get().n,0);
+ assert.equal(calls.gmail,0);assert.equal(calls.externalReads,0);assert.equal(calls.externalWrites,0);
  const stored=JSON.stringify(sqlite.prepare('SELECT * FROM reservations').all());
  for(const value of [deliveryCustomer.name,deliveryCustomer.cpf,deliveryCustomer.email,deliveryCustomer.street])assert.equal(stored.includes(value),false);
- sqlite.prepare('UPDATE reservations SET created_ms=? WHERE id=?').run(Date.now()-3_600_001,b.id);
- assert.equal((await route.POST(deliveryRequest('documents/send',body))).status,403);
 });
-test('Gmail reservation and release emails use external identity, deduplicate sends and preserve the first recipient',async t=>{
- await fixture();configureGmail();Object.assign(environment,{CUSTOMER_API_URL:'https://customer.example/api',CUSTOMER_API_TOKEN:'test-token',CUSTOMER_SYSTEM_NAME:'Test CRM'});
- const calls=mockDelivery(t),b=await fleet.reserve(request());
- const body={reservation_id:b.id,delivery_token:b.delivery_token,customer:deliveryCustomer};
- const results=await Promise.all([route.POST(deliveryRequest('documents/send',body)),route.POST(deliveryRequest('documents/send',body))]);
- const statuses=await Promise.all(results.map(r=>r.json()));assert.ok(statuses.some(r=>r.status==='submitted'));
- assert.equal(calls.gmail,1);assert.equal(calls.externalWrites,1);assert.match(calls.raw[0],/To: <cliente@example.com>/);
- const changed={...deliveryCustomer,email:'other@example.com',name:'Outra Pessoa Teste'};
- const repeated=await deliveryServer.sendCustomerDocument({...body,customer:changed},'https://fleet.test/');
- assert.equal(repeated.status,'already_sent');assert.equal(calls.externalWrites,1);assert.equal(calls.gmail,1);
+test('minimal reservation retries preserve the private contact and queue pickup only after staff release',async t=>{
+ await fixture();const calls=mockDelivery(t),contact={name:'Cliente WhatsApp',phone:'11988887777'};
+ const input=request({contact,whatsapp_consent:true});
+ const response=await route.POST(deliveryRequest('reservations',input));assert.equal(response.status,200);const b=await response.json();
+ assert.equal(b.account_linked,false);assert.equal(b.contact_saved,true);assert.equal(b.delivery.status,'not_configured');
+ assert.equal(JSON.parse(b.terms_snapshot).contact_mode,'whatsapp_minimal');
+ const jobs=()=>sqlite.prepare('SELECT * FROM reservation_document_deliveries WHERE reservation_id=? ORDER BY event_key').all(b.id);
+ const initialJobs=jobs();assert.ok(initialJobs.some(row=>row.kind==='whatsapp_reservation'));assert.equal(initialJobs.some(row=>row.kind==='whatsapp_ready'),false);
+ const retry=await route.POST(deliveryRequest('reservations',input));assert.equal(retry.status,200);assert.equal((await retry.json()).code,b.code);assert.deepEqual(jobs(),initialJobs);
+ assert.equal((await route.POST(deliveryRequest('reservations',{...input,contact:{...contact,phone:'11977776666'}}))).status,409);
+ const contactBody={reservation_id:b.id,delivery_token:b.delivery_token,contact,whatsapp_consent:true};
+ assert.equal((await route.POST(deliveryRequest('contact',{...contactBody,delivery_token:crypto.randomUUID()}))).status,403);
+ assert.equal((await route.POST(deliveryRequest('contact',{...contactBody,contact:{phone:'11977776666'}}))).status,409);
+ const contactUrl='https://fleet.test/api/fleet/admin/contact?reservation_id='+b.id;
+ assert.equal((await route.GET(new Request(contactUrl))).status,401);
+ assert.equal((await route.GET(new Request(contactUrl,{headers:{'oai-authenticated-user-id':'visitor'}}))).status,403);
+ const privateResponse=await route.GET(new Request(contactUrl,{headers:{'oai-authenticated-user-id':'owner'}}));assert.equal(privateResponse.status,200);assert.equal(privateResponse.headers.get('Cache-Control'),'no-store');
+ const saved=(await privateResponse.json()).contact;assert.equal(saved.phone,'5511988887777');assert.equal(saved.name,contact.name);assert.equal(saved.whatsapp_consent,true);
+ sqlite.prepare('UPDATE reservations SET created_ms=? WHERE id=?').run(Date.now()-3_600_001,b.id);
+ assert.equal((await route.POST(deliveryRequest('contact',contactBody))).status,403);
+ const stored=sqlite.prepare('SELECT * FROM reservations WHERE id=?').get(b.id);
+ for(const key of ['name','phone','email','city','customer_id'])assert.equal(stored[key],'');
+ for(const value of [contact.name,contact.phone,saved.phone])assert.equal(JSON.stringify({reservation:stored,jobs:jobs()}).includes(value),false);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,1);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customer_sessions').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_customer_data').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_private_documents').get().n,0);
  await fleet.updateReservation({id:b.id,status:'preparing',payment_status:'pending'});
- const released=await route.POST(deliveryRequest('admin/reservation',{id:b.id,status:'ready',payment_status:'pending',pickup_time:start,vehicle_checked:true,documents_checked:true,battery_checked:true},true));
- const result=await released.json();assert.equal(result.delivery.status,'submitted');assert.equal(calls.gmail,2);assert.match(calls.raw[1],/To: <cliente@example.com>/);
- const again=await route.POST(deliveryRequest('admin/documents/send',{reservation_id:b.id,kind:'pickup_confirmation'},true));assert.equal((await again.json()).status,'already_sent');assert.equal(calls.gmail,2);
- const tracked=sqlite.prepare('SELECT * FROM reservation_document_deliveries').all();assert.equal(tracked.filter(r=>r.status==='submitted').length,2);
- const persisted=JSON.stringify({reservations:sqlite.prepare('SELECT * FROM reservations').all(),deliveries:tracked});
- for(const value of [deliveryCustomer.name,deliveryCustomer.cpf,deliveryCustomer.email,deliveryCustomer.street,'test-refresh','test-access'])assert.equal(persisted.includes(value),false);
- assert.equal((await fleet.adminData()).reservations[0].documents_delivery.length,2);
+ const release={id:b.id,status:'ready',payment_status:'pending',pickup_time:start,vehicle_checked:true,documents_checked:true,battery_checked:true};
+ const released=await route.POST(deliveryRequest('admin/reservation',release,true));assert.equal(released.status,200);
+ const result=await released.json();assert.equal(result.reservation.status,'ready');assert.equal(result.delivery.status,'not_configured');
+ const readyJobs=jobs();assert.ok(readyJobs.some(row=>row.kind==='whatsapp_ready'));assert.equal(readyJobs.some(row=>row.kind==='pickup_confirmation'),false);
+ assert.equal((await route.POST(deliveryRequest('admin/reservation',release,true))).status,200);assert.deepEqual(jobs(),readyJobs);
+ assert.equal(calls.gmail,0);assert.equal(calls.externalReads,0);assert.equal(calls.externalWrites,0);
 });
 test('ambiguous Gmail response and stale leases block repeat sends even with implicit Gmail selection',async t=>{
  await fixture();configureGmail();const calls=mockDelivery(t,{ambiguous:true}),b=await fleet.reserve(request());
@@ -311,7 +360,7 @@ test('ambiguous Gmail response and stale leases block repeat sends even with imp
  await deliveryServer.sendCustomerDocument(body,'https://fleet.test/');assert.equal(calls.gmail,1);
  assert.equal(sqlite.prepare('SELECT status FROM reservation_document_deliveries WHERE kind=?').get('reservation').status,'unknown');
 });
-test('release succeeds while unconfigured email is reported independently and current clauses are snapshotted',async()=>{
+test('release succeeds while unconfigured WhatsApp is reported independently and current clauses are snapshotted',async()=>{
  await fixture();const b=await fleet.reserve(request());
  assert.equal(JSON.parse(b.terms_snapshot).delay_daily_cents,5000);assert.match(JSON.parse(b.terms_snapshot).document.clauses.delay,/dividida por 24/i);
  await fleet.updateReservation({id:b.id,status:'preparing',payment_status:'pending'});
@@ -409,7 +458,19 @@ test('release cannot announce pickup during the prior return preparation or an u
  assert.equal((await fleet.updateReservation(afterPreparation)).reservation.status,'ready');
 });
 
-test('Cloudflare production refuses to open full-identification reservations before encryption is configured',async(t)=>{
+test('Cloudflare reservations work without customer encryption or customer accounts and still freeze accepted terms',async(t)=>{
  await fixture({enabled:false});const savedKey=environment.CUSTOMER_DATA_KEY;t.after(()=>{delete environment.CALORI_AUTH_MODE;if(savedKey===undefined)delete environment.CUSTOMER_DATA_KEY;else environment.CUSTOMER_DATA_KEY=savedKey;});environment.CALORI_AUTH_MODE='password';delete environment.CUSTOMER_DATA_KEY;
- const input={address:'Endereço do teste',whatsapp:'19999999999',coverage:'Condições de teste',protection_enabled:false,protection_daily_cents:1500,rentals_enabled:true};await assert.rejects(()=>fleet.saveSettings(input),e=>e.status===409);environment.CUSTOMER_DATA_KEY='c1'.repeat(32);assert.equal((await fleet.saveSettings(input)).rentals_enabled,true);
+ const input={address:'Endereço do teste',whatsapp:'19999999999',coverage:'Condições de teste',protection_enabled:false,protection_daily_cents:1500,rentals_enabled:true};assert.equal((await fleet.saveSettings(input)).rentals_enabled,true);
+ const q=await fleet.quote({model_id:'t1',start,end,insurance:'none'});
+ const response=await route.POST(deliveryRequest('reservations',request({expected_daily_cents:q.daily_cents,expected_total_cents:q.total_cents,expected_terms_token:q.terms_token,contact:{phone:'19999999999'},whatsapp_consent:true})));
+ assert.equal(response.status,200);const b=await response.json();assert.equal(b.total_cents,9000);assert.equal(b.account_linked,false);assert.equal(b.payment_method,'pickup');assert.equal(b.payment_status,'pending');
+ const snapshot=JSON.parse(b.terms_snapshot);assert.equal(snapshot.contact_mode,'whatsapp_minimal');assert.equal(snapshot.delay_daily_cents,4500);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_contacts').get().n,1);
+ for(const table of ['customers','customer_sessions','reservation_customer_data','reservation_private_documents'])assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM '+table).get().n,0);
+ const customerRoute=await compile('app/api/customer/[...path]/route.ts');
+ for(const path of ['register','login','reservations']){
+  const closed=await customerRoute.POST(new Request('https://fleet.test/api/customer/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:'19999999999',password:'unused-account-password'})}));assert.equal(closed.status,410);assert.match(closed.headers.get('Set-Cookie'),/Max-Age=0/);
+ }
+ const current=(await fleet.adminData()).models[0];await fleet.saveModel({...current,daily_cents:4000});
+ const retained=sqlite.prepare('SELECT total_cents,terms_snapshot FROM reservations WHERE id=?').get(b.id);assert.equal(retained.total_cents,9000);assert.equal(retained.terms_snapshot,b.terms_snapshot);
 });

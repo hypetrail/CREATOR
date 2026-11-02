@@ -1,13 +1,13 @@
-import {registerWhatsAppContact,queueReadyWhatsApp,queueOwnerReservationWhatsApp} from '../../../../lib/reservation-whatsapp-server';
+import {registerWhatsAppContact,queueReadyWhatsApp,queueOwnerReservationWhatsApp,queuePendingWhatsApp} from '../../../../lib/reservation-whatsapp-server';
 import * as fleet from '../../../../lib/fleet-server';
 import * as rental from '../../../../lib/rental-server';
 import * as documents from '../../../../lib/document-server';
-import * as delivery from '../../../../lib/document-delivery-server';
+import type {DeliveryNotice} from '../../../../lib/document-delivery-server';
 import * as operations from '../../../../lib/operation-records-server';
 import * as notifications from '../../../../lib/notification-server';
 import * as privateData from '../../../../lib/private-customer-store';
 import {inspectionReportResponse,archiveInspection} from '../../../../lib/inspection-archive-server';
-import {customerIdentity} from '../../../../lib/customer-auth';
+import {validateMinimalContact,readMinimalReservationContact,replaceMinimalReservationContact,revokeMinimalReservationConsent} from '../../../../lib/reservation-contact-server';
 import {createCareGuidePdf} from '../../../../lib/care-pdf';
 import {defaultCareGuide} from '../../../../lib/care-guide';
 import {loadPdfFont} from '../../../../lib/font-server';
@@ -21,6 +21,18 @@ async function readBody(req:Request,limit:number){
  while(true){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>limit){await reader.cancel();throw new fleet.HttpError(413,'Solicitação muito grande.');}chunks.push(next.value);}
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
  return bytes;
+}
+async function prepareMessages(reserved:{id:string;delivery_token?:string},contact:unknown){
+ if(!reserved.delivery_token){try{await queueOwnerReservationWhatsApp(reserved.id);return {status:'queued',contact_saved:true,message:'Reserva e contato registrados. Avisos preparados para processamento no servidor.'};}catch{return {status:'failed',contact_saved:true,message:'Reserva e contato registrados; confira a fila de avisos.'};}}
+ try{return await registerWhatsAppContact({reservation_id:reserved.id,delivery_token:reserved.delivery_token,contact,whatsapp_consent:true});}
+ catch{return {status:'failed',contact_saved:true,message:'Reserva e contato registrados. A preparação dos avisos precisa ser conferida pela equipe.'};}
+}
+async function limitPublicReservations(req:Request){
+ const now=Date.now(),ip=req.headers.get('cf-connecting-ip')||'unknown';
+ const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('minimal-reservation:'+ip));
+ const key=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
+ const hit=await rental.db().prepare('INSERT INTO customer_auth_limits (key_hash,window_ms,count) VALUES (?,?,1) ON CONFLICT(key_hash) DO UPDATE SET count=CASE WHEN window_ms<=? THEN 1 ELSE count+1 END,window_ms=CASE WHEN window_ms<=? THEN excluded.window_ms ELSE window_ms END RETURNING count').bind(key,now,now-600000,now-600000).first<{count:number}>();
+ if(!hit||hit.count>5)throw new fleet.HttpError(429,'Muitas solicitações. Aguarde alguns minutos ou fale com a loja.');
 }
 async function handle(req:Request){
  try{
@@ -69,12 +81,15 @@ async function handle(req:Request){
   else if(req.method==='GET'&&path==='availability')result=await fleet.availability(url.searchParams.get('start')||'',url.searchParams.get('end')||'');
   else if(req.method==='POST'&&path==='quote')result=await fleet.quote(input);
   else if(req.method==='POST'&&path==='reservations'){
-   const customer=await customerIdentity(req);
-   result=await fleet.reserve(input,false,'',customer?.id||'');
+   validateMinimalContact(input.contact);
+   if(input.whatsapp_consent!==true)throw new fleet.HttpError(400,'Autorize os avisos operacionais desta reserva.');
+   if(!await rental.db().prepare('SELECT id FROM reservations WHERE request_key=?').bind(String(input.request_key||'')).first())await limitPublicReservations(req);
+   const reserved=await fleet.reserve(input);
+   result={...reserved,contact_saved:true,delivery:await prepareMessages(reserved,input.contact)};
   }
   else if(req.method==='POST'&&path==='contact')result=await registerWhatsAppContact(input);
-  else if(req.method==='POST'&&path==='documents/send')result=await delivery.sendCustomerDocument(input,req.url);
-  else if(req.method==='POST'&&path==='admin/documents/send')result=await delivery.sendAdminDocument(input,req.url);
+  else if(req.method==='POST'&&path==='documents/send')throw new fleet.HttpError(410,'O cadastro completo e o envio por e-mail foram encerrados. Use o contato mínimo da reserva.');
+  else if(req.method==='POST'&&path==='admin/documents/send')throw new fleet.HttpError(410,'Envio por e-mail encerrado. Use os avisos pelo WhatsApp da reserva.');
   else if(req.method==='GET'&&path==='admin/private-documents'){
    const value=await privateData.listPrivateDocumentsForOwner(url.searchParams.get('reservation_id')||'');
    result={documents:value.documents.map(document=>({...document,url:'/api/fleet/admin/private-documents/'+document.id}))};
@@ -86,19 +101,25 @@ async function handle(req:Request){
    await operations.recordAudit(actor,'private_customer_viewed',id,{});
    result={customer,storage_configured:privateData.privateStorageConfigured()};
   }
-  else if(req.method==='POST'&&path==='admin/customer-data'){
-   if(Object.keys(input).some(key=>!['reservation_id','customer','generate_pdf','whatsapp_consent'].includes(key)))throw new fleet.HttpError(400,'Informe somente a reserva, identificação e opções de documento.');
-   if((input.generate_pdf!==undefined&&typeof input.generate_pdf!=='boolean')||(input.whatsapp_consent!==undefined&&typeof input.whatsapp_consent!=='boolean'))throw new fleet.HttpError(400,'Confira as opções de documento e WhatsApp.');
-   const id=String(input.reservation_id||'');
-   const saved=await privateData.saveReservationCustomer(id,input.customer);
-   const document=input.generate_pdf===true?await privateData.savePrivateReservationDocument({reservation:{id},kind:'reservation',fontBytes:await loadPdfFont(req.url)}):null;
-   if(input.whatsapp_consent===true)await queueOwnerReservationWhatsApp(id);
-   await operations.recordAudit(actor,'private_customer_recorded',id,{});
-   result={ok:true,customer_stored:true,document_saved:!!document,customer:saved.customer,...(document?{document_id:document.id}:{})};
+  else if(req.method==='POST'&&path==='admin/customer-data')throw new fleet.HttpError(410,'Novos cadastros completos foram encerrados. Use o contato mínimo da reserva.');
+  else if(req.method==='GET'&&path==='admin/contact')result={contact:await readMinimalReservationContact(url.searchParams.get('reservation_id')||'')};
+  else if(req.method==='POST'&&path==='admin/contact'){
+   if(Object.keys(input).some(key=>!['reservation_id','contact','whatsapp_consent'].includes(key)))throw new fleet.HttpError(400,'Informe somente o contato e a autorização desta reserva.');
+   result={ok:true,contact:await replaceMinimalReservationContact(String(input.reservation_id||''),input.contact,input.whatsapp_consent===true),message:'Contato registrado. Envios já aceitos ou incertos não são repetidos automaticamente.'};
+   if(input.whatsapp_consent===true)await queueOwnerReservationWhatsApp(String(input.reservation_id||''));
+  }
+  else if(req.method==='POST'&&path==='admin/contact/pending'){
+   if(Object.keys(input).some(key=>!['reservation_id','reason'].includes(key)))throw new fleet.HttpError(400,'Informe somente a reserva e a pendência.');
+   result=await queuePendingWhatsApp(String(input.reservation_id||''),String(input.reason||''));
+   await operations.recordAudit(actor,'reservation_pending',String(input.reservation_id||''),{});
+  }
+  else if(req.method==='POST'&&path==='admin/contact/revoke'){
+   if(Object.keys(input).some(key=>key!=='reservation_id'))throw new fleet.HttpError(400,'Informe somente a reserva.');
+   await revokeMinimalReservationConsent(String(input.reservation_id||''));result={ok:true,message:'Avisos desta reserva revogados.'};
   }
   else if(req.method==='GET'&&path==='admin/documents')result=await documents.documentAdmin();
   else if(req.method==='POST'&&path==='admin/documents')result=await documents.saveDocumentVersion(input);
-  else if(req.method==='POST'&&path==='admin/customer-reference')result=await documents.linkExternalCustomer(input);
+  else if(req.method==='POST'&&path==='admin/customer-reference')throw new fleet.HttpError(410,'O vínculo de novos cadastros externos foi encerrado.');
   else if(req.method==='GET'&&path==='admin'){
    const data=await fleet.adminData();
    const holds=await rental.db().prepare('SELECT id,unit_id,inspection_id,reason,created_ms,created_by,resolved_ms FROM unit_safety_holds WHERE resolved_ms IS NULL ORDER BY created_ms DESC').all();
@@ -112,51 +133,36 @@ async function handle(req:Request){
   else if(req.method==='POST'&&path==='admin/safety-holds/resolve')result=await operations.resolveSafetyHold(input,actor);
   else if(req.method==='GET'&&path==='admin/audit')result=await operations.auditEvents();
   else if(req.method==='GET'&&path==='admin/notifications')result=await notifications.notificationAdmin();
-  else if(req.method==='POST'&&path==='admin/notifications/process')result=await notifications.processNotifications({limit:Number(input.limit)||20});
-  else if(req.method==='POST'&&path==='admin/notifications/settings'){
-   if(Object.keys(input).some(key=>key!=='auto_availability')||typeof input.auto_availability!=='boolean')throw new fleet.HttpError(400,'Informe se o aviso automático de disponibilidade está ativado.');
-   result=await notifications.saveNotificationSettings({auto_availability:input.auto_availability});
-   await operations.recordAudit(actor,'notification_preferences_changed','company',{auto_availability:input.auto_availability===true});
-  }
-  else if(req.method==='POST'&&path==='admin/notifications/availability')result=await notifications.enqueueAvailabilityCampaign({modelIds:Array.isArray(input.model_ids)?input.model_ids.filter((id):id is string=>typeof id==='string'):[]});
+  else if(req.method==='POST'&&path==='admin/notifications/process')result=await notifications.processOperationalNotifications({limit:Number(input.limit)||20});
+  else if(req.method==='POST'&&['admin/notifications/settings','admin/notifications/availability'].includes(path))throw new fleet.HttpError(410,'Campanhas de contas de clientes foram encerradas. Os avisos agora pertencem às reservas.');
   else if(req.method==='POST'&&path==='admin/model')result=await fleet.saveModel(input);
   else if(req.method==='POST'&&path==='admin/unit')result=await fleet.saveUnit(input);
   else if(req.method==='POST'&&path==='admin/settings')result=await fleet.saveSettings(input);
   else if(req.method==='POST'&&path==='admin/block')result=await fleet.addBlock(input);
   else if(req.method==='POST'&&path==='admin/delete-block')result=await fleet.deleteBlock(String(input.id||''));
-  else if(req.method==='POST'&&path==='admin/manual-reservation')result=await fleet.createManualReservation(input);
+  else if(req.method==='POST'&&path==='admin/manual-reservation'){
+   validateMinimalContact(input.contact);if(input.whatsapp_consent!==true||input.customer_id!==undefined)throw new fleet.HttpError(400,'Use somente contato mínimo e sua autorização.');
+   const reserved=await fleet.createManualReservation(input);
+   result={...reserved,contact_saved:true,delivery:await prepareMessages(reserved,input.contact)};
+  }
   else if(req.method==='POST'&&path==='admin/reservation'){
    const updated=await fleet.updateReservation(input,actor);
-   // Operational release succeeds even when the email service is unavailable.
+   // Operational release succeeds even when the WhatsApp service is unavailable.
    // Its separate result stays visible so an operator can resolve or retry it.
-   let sent:delivery.DeliveryNotice|undefined;
-   let notificationWarning='';
-   try{
-    if(updated.reservation.status==='preparing')await notifications.enqueuePreparationNotification(updated.reservation.id);
-    if(updated.reservation.status==='ready')await notifications.enqueueReadyNotification(updated.reservation.id);
-    if(updated.reservation.status==='rented'){
-     await notifications.enqueueReturnReminder(updated.reservation.id);
-     await notifications.enqueueCareReminder(updated.reservation.id);
-    }
-   }catch{notificationWarning='A operação foi registrada, mas os avisos de WhatsApp exigem conferência no painel.';}
+   let sent:DeliveryNotice|undefined;
    if(updated.reservation.status==='ready'){
-    try{
-     const minimal=JSON.parse(updated.reservation.terms_snapshot||'{}').contact_mode==='whatsapp';
-     const emailRequested=await rental.db().prepare("SELECT event_key FROM reservation_document_deliveries WHERE reservation_id=? AND kind='reservation' AND status='submitted'").bind(updated.reservation.id).first();
-     if(minimal&&!emailRequested){const notice=await queueReadyWhatsApp(updated.reservation.id);sent={status:notice.queued&&notice.configured?'processing':'not_configured',message:!notice.queued?'Moto liberada. Falta registrar a identificação e a autorização de WhatsApp desta reserva; confira o cadastro antes de avisar.':notice.configured?'Moto liberada. O aviso está na fila do WhatsApp cadastrado. Nenhum e-mail é necessário.':'Moto liberada. O aviso está preparado, mas a API do WhatsApp ainda precisa ser conectada.'};}
-     else sent=await delivery.sendAdminDocument({reservation_id:updated.reservation.id,kind:'pickup_confirmation'},req.url);
-    }
-    catch{sent={status:'failed',message:'Moto liberada, mas o documento não pôde ser enviado. Confira o envio no painel.'};}
+    try{const notice=await queueReadyWhatsApp(updated.reservation.id);sent={status:notice.queued&&notice.configured?'processing':'not_configured',message:!notice.queued?'Moto liberada. Confira o WhatsApp e a autorização desta reserva.':notice.configured?'Aviso de retirada na fila do WhatsApp.':'Aviso preparado; a conexão WhatsApp ainda precisa ser configurada.'};}
+    catch{sent={status:'failed',message:'Operação registrada. Confira a fila de avisos da reserva.'};}
    }
-   result={...updated,...(sent?{delivery:sent}:{}),...(notificationWarning?{notification_warning:notificationWarning}:{})};
+   result={...updated,...(sent?{delivery:sent}:{})};
   }
   else throw new fleet.HttpError(404,'Página não encontrada.');
-  const audited=['admin/model','admin/unit','admin/settings','admin/block','admin/delete-block','admin/manual-reservation','admin/reservation','admin/documents','admin/customer-reference'];
+  const audited=['admin/model','admin/unit','admin/settings','admin/block','admin/delete-block','admin/manual-reservation','admin/reservation','admin/documents','admin/contact','admin/contact/revoke'];
   if(req.method==='POST'&&actor&&audited.includes(path)){
    // Log only operational fields. Full forms, passwords and customer documents
    // must never be copied to the audit payload.
    const safe=Object.fromEntries(['status','payment_status','inspection_id','model_id','unit_id','daily_cents','active'].filter(key=>input[key]!==undefined).map(key=>[key,input[key]]));
-   let entityId=typeof input.id==='string'?input.id:'';
+   let entityId=typeof input.id==='string'?input.id:typeof input.reservation_id==='string'?input.reservation_id:'';
    if(result&&typeof result==='object'&&'id'in result)entityId=String(result.id);
    if(result&&typeof result==='object'&&'reservation'in result){const reservation=result.reservation as {id?:string};entityId=reservation.id||entityId;}
    try{await operations.recordAudit(actor,path.slice(6).replaceAll('/','_'),entityId,safe);}

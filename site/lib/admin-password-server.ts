@@ -1,4 +1,5 @@
 import {hashCustomerPassword,verifyCustomerPassword} from './customer-auth';
+import {whatsappConfiguration,type WhatsAppEnvironment} from './whatsapp-server';
 import {siteOwnerId} from './site-owner';
 
 export interface AdminEnvironment {DB?:D1Database;ADMIN_SETUP_KEY?:string;CUSTOMER_DATA_KEY?:string;CALORI_AUTH_MODE?:string}
@@ -13,10 +14,6 @@ const cookie=(token:string,maxAge=SESSION_MS/1000)=>`${COOKIE}=${token}; Path=/;
 const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 class AdminError extends Error {constructor(public status:number,message:string){super(message);}}
 const credential=(db:D1Database)=>db.prepare("SELECT password_hash,version FROM admin_credentials WHERE id='owner'").first<Credential>();
-function dataKeyConfigured(value?:string){
- const raw=value?.trim()||'';if(/^[a-f0-9]{64}$/i.test(raw))return true;
- try{return /^[A-Za-z0-9+/]{43}=$/.test(raw)&&atob(raw).length===32&&btoa(atob(raw))===raw;}catch{return false;}
-}
 function token(req:Request){const values=(req.headers.get('cookie')||'').split(';').map(v=>v.trim()).filter(v=>v.startsWith(COOKIE+'='));if(values.length!==1)return '';const t=values[0].slice(COOKIE.length+1);return /^[a-f0-9]{64}$/.test(t)?t:'';}
 async function validSession(req:Request,db:D1Database){const t=token(req);if(!t)return false;return !!await db.prepare("SELECT s.token_hash FROM admin_sessions s JOIN admin_credentials c ON c.id='owner' AND c.version=s.credential_version WHERE s.token_hash=? AND s.expires_ms>?").bind(await digest(t),Date.now()).first();}
 function redirect(location:string,setCookie?:string){return new Response(null,{status:303,headers:{...headers,Location:location,...(setCookie?{'Set-Cookie':setCookie}:{})}});}
@@ -105,11 +102,11 @@ export async function adminPasswordBoundary(req:Request,environment:AdminEnviron
   }
   if(path==='/admin/configuracao'){
    if(req.method!=='GET')return new Response(null,{status:405,headers:{...headers,Allow:'GET'}});
-   const configured=dataKeyConfigured(environment.CUSTOMER_DATA_KEY);
    const preserved=await db.prepare('SELECT COUNT(*) n FROM reservation_customer_data').first<{n:number}>();
-   const canGenerate=!configured&&!preserved?.n;
-   const script=canGenerate?`document.getElementById('generate').addEventListener('click',()=>{const b=crypto.getRandomValues(new Uint8Array(32));document.getElementById('key').value=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');document.getElementById('generate').disabled=true;});document.getElementById('copy').addEventListener('click',async()=>{const key=document.getElementById('key').value;if(key){try{await navigator.clipboard.writeText(key);document.getElementById('status').textContent='Chave copiada. Guarde também uma cópia segura antes de sair.';}catch{document.getElementById('status').textContent='Selecione e copie a chave abaixo.';}}});`:'';
-   return page('Configuração da loja',`<p>O acesso do administrador está criado.</p><p class="note">No painel Cloudflare, abra este Worker → Settings → Variables and Secrets. Após criar sua senha, remova ADMIN_SETUP_KEY. Se precisar recuperar o acesso, cadastre uma nova chave provisória e use /admin/recuperar.</p>${configured?'<p>A chave do cadastro está configurada. Preserve o valor atual e uma cópia segura para recuperação.</p>':preserved?.n?'<p class="error">Já existem cadastros protegidos. Recupere a chave original CUSTOMER_DATA_KEY; uma chave nova não abrirá esses registros.</p>':'<p>Para guardar o cadastro completo, gere uma chave abaixo e cadastre-a como segredo CUSTOMER_DATA_KEY nas configurações do Worker. A geração acontece apenas no seu navegador. Preserve uma cópia segura; ela não fica salva nesta página.</p><button id="generate" type="button">Gerar chave do cadastro</button><label>Chave gerada<input id="key" readonly autocomplete="off"></label><button id="copy" type="button">Copiar chave</button><p id="status" role="status"></p>'}<p><a class="button" href="/admin">Abrir painel da frota</a></p><p>Depois, confira as condições e libere as reservas pelo painel. O WhatsApp pode ser conectado em uma próxima etapa.</p>`,200,script);
+   const connection=whatsappConfiguration(environment as AdminEnvironment&WhatsAppEnvironment);
+   const legacy=preserved?.n?`<p class="note">Há registros completos de versões anteriores. Preserve a chave CUSTOMER_DATA_KEY original para consultar esses arquivos. Ela não é exigida para novas reservas e uma chave nova não abre o histórico.</p>`:'';
+   return page('Configuração da loja',`<p>O administrador usa senha própria. Clientes reservam sem conta, informando apenas WhatsApp e nome opcional.</p><p class="note">Depois do primeiro acesso, remova ADMIN_SETUP_KEY dos segredos do Worker. Para recuperar a senha administrativa, cadastre uma nova chave provisória e use /admin/recuperar.</p><h2>WhatsApp no servidor</h2><p>Conexão: <strong>${connection.provider==='configured'?'configurada':'pendente'}</strong>. Modelo de mensagem da locação: <strong>${connection.templates.rental==='configured'?'configurado':'pendente'}</strong>.</p><p>No Cloudflare, abra este Worker → Settings → Variables and Secrets. Cadastre WHATSAPP_ACCESS_TOKEN como Secret. Configure também WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_API_VERSION e WHATSAPP_TEMPLATE_RENTAL, além do idioma pt_BR quando aplicável. Use a conta WhatsApp Business da loja e um template utilitário aprovado. O token nunca deve ficar no código do site ou ser enviado pelo chat.</p><p>O painel Avisos acompanha confirmação, preparação, retirada, pendências e lembretes de devolução. O Worker processa a fila a cada cinco minutos depois de publicado.</p>${legacy}<p>As reservas usam somente o contato autorizado e dados da locação no D1 privado. Não é necessário criar uma nova chave de cadastro, conta de cliente, e-mail ou armazenamento R2 para esse fluxo. Documentação e assinatura serão conferidas na loja.</p><p><a class="button" href="/admin">Abrir painel da frota</a></p>`);
+
   }
   cleanHeaders.set('oai-authenticated-user-id',siteOwnerId);cleanHeaders.set('oai-authenticated-user-email','administrador@calorimob.local');cleanHeaders.set('oai-authenticated-user-full-name',encodeURIComponent('Administração CaloriMob'));cleanHeaders.set('oai-authenticated-user-full-name-encoding','percent-encoded-utf-8');
   return new Request(req,{headers:cleanHeaders});

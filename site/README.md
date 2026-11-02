@@ -1,51 +1,44 @@
 # CaloriMob — locação de motos elétricas
 
-> **Versão atual da frota T1:** veja [Como gerenciar a frota](docs/COMO-GERENCIAR-A-FROTA.md), [Desenvolvimento](docs/DESENVOLVIMENTO-FROTA.md) e [Cadastro T1](docs/T1-CADASTRO.md). A página inicial e `/admin` agora usam o catálogo dinâmico e as reservas operacionais em `/api/fleet`. Os registros abaixo descrevem a versão anterior e seu histórico de decisões.
+Site público de locação, painel exclusivo do administrador e avisos operacionais de WhatsApp no servidor. O cliente reserva com WhatsApp obrigatório e nome opcional: não cria conta nem informa CPF, endereço, e-mail ou senha. Identificação, documentação e assinatura são conferidas na loja.
 
-Aplicação destinada à hospedagem privada em Sites, com Vinext, D1 para modelos, unidades, reservas e bloqueios, e R2 para fotos.
+A aplicação usa React/TypeScript, Worker Cloudflare e um banco D1 para frota, reservas, contato mínimo e fila de mensagens. O token da Meta fica somente no servidor. Não é um pacote HTML para upload estático.
 
-O site é exclusivo de locação. O antigo endereço `/catalogo/index.html` redireciona para a página inicial. O painel fica em `/admin`. A página principal inclui filtros, comparação e indicação por trajeto/peso.
+## Começar
 
-## Frota e preços — atualização de 14/10/2026
+- [Fluxo atual sem cadastro](docs/NOVO-FLUXO-SEM-CADASTRO.md)
+- [Publicar no Cloudflare pelo painel e GitHub](docs/PUBLICAR-CLOUDFLARE-PELO-PAINEL.md)
+- [Como gerenciar a frota](docs/COMO-GERENCIAR-A-FROTA.md)
+- [Validação da versão](docs/VALIDACAO-CLOUDFLARE.md)
 
-JE-7 Ecoviva e Rio Conduzza a R$ 35/dia; CX18 CaloriMob a R$ 45/dia. Uma unidade inicial por modelo, ajustável no painel. A atualização de dados é executada uma vez para o proprietário e preserva reservas existentes. Modelos antigos são desativados, sem apagar histórico. Cadastros futuros continuam permitidos.
+## Operação
 
-Seguro básico R$ 15/diária (pneu furado, avarias na lataria e pintura, como riscos) ou completo R$ 30/diária (pneu furado e danos à moto alugada em queda ou colisão). Ambos incluem uma lavagem; não há cobrança separada. Terceiros não são cobertos pelo pacote. Descrições fornecidas pelo usuário para o rascunho, sem inventar franquias ou limites. Colunas antigas de lavagem são mantidas para não alterar histórico; não geram novas cobranças.
+O administrador gerencia modelos e unidades, preços, calendário, manutenção, bloqueios, reserva manual, preparação, liberação para retirada, vistorias, pagamentos presenciais e devolução. Alterações de preço não modificam reservas anteriores.
 
-O site abre em modo de demonstração, sem gravar reservas reais. Cabeçalho e rodapé usam logo e ícone da moto enviados, exibidos em verde claro por máscara CSS. A abertura tem só texto: “Alugue uma moto elétrica. Escolha. Converse. Ande.”
+A T1 tem cinco unidades e nenhuma escolha pública de cor. Uma diária custa R$ 60 com proteção; a partir de dois dias, R$ 45 por dia (R$ 30 de locação + R$ 15 de proteção). O intervalo entre locações é de três horas. Atrasos descontam duas horas de tolerância e cobram cada hora iniciada em 1/24 da diária, arredondando os centavos no total. Condições e valores são preservados por reserva.
 
-As imagens da identidade visual fornecidas foram copiadas integralmente para `public/brand`. Fotos reais das três motos, endereço e WhatsApp oficial ainda faltam. A simulação funciona sem criar reserva; reservas reais continuam condicionadas ao cadastro operacional e liberação no painel. Dados técnicos incertos são sinalizados, sem prometer ré/Bluetooth ou capacidade exata da CX18.
+A reserva e o contato são gravados juntos. As mensagens cobrem confirmação, pendência registrada pelo administrador, preparação, liberação e proximidade da devolução. A liberação depende da equipe. Sem credenciais e template aprovado da Meta, o sistema informa que a comunicação aguarda configuração, sem declarar envio realizado.
 
-O pagamento na retirada é implementado. Pix/cartão online está sinalizado como integração pendente; nenhuma cobrança online é realizada.
+Cadastros completos, contas e documentos antigos permanecem privados para consulta administrativa; não recebem novos registros por rotas públicas. Preserve a chave original `CUSTOMER_DATA_KEY` se houver dados históricos criptografados. Novos contatos não exigem essa chave nem R2. Fotos de vistoria podem ficar no computador da loja, com referências e checklist no painel.
 
-## Regras de reserva
+## Desenvolvimento e publicação
 
-Retirada futura e intervalo mínimo de 48 horas. Diárias de 24 horas, com frações adicionais arredondadas para uma nova diária. Valores armazenados em centavos. Tarifas e totais são recalculados no servidor.
+Node.js 24; instalar com `npm ci`. Copie `.dev.vars.example` para `.dev.vars` somente no ambiente local. Os segredos reais não devem entrar no GitHub.
 
-Cada unidade possui calendário próprio. A alocação usa um único INSERT/SELECT para impedir reservas sobrepostas e respeitar manutenção/bloqueios. Os intervalos são semiabertos: devolução e próxima retirada podem ocorrer no mesmo instante. Reservas canceladas/devolvidas não bloqueiam disponibilidade. O pagamento “Pago” é registrado manualmente pela loja.
+```sh
+npm run db:local
+npm run dev
+```
 
-Na consulta de acesso de 14/10/2026 o serviço retornou audiência pública, em divergência com a instrução do usuário. A publicação desta atualização está suspensa até autorização para restaurar acesso privado. Nunca mudar a audiência sem aprovação explícita de Maicon. As APIs exigem a identidade fornecida pela hospedagem; o proprietário do painel é vinculado ao primeiro visitante autenticado, dentro do acesso exclusivo já confirmado da conta proprietária. Essa configuração não deve ser usada para uma primeira publicação pública.
+```sh
+npm test
+npx tsc --noEmit
+npm run build:cloudflare
+npm run deploy:cloudflare -- --dry-run
+```
 
-## Validação
+O último comando apenas valida o pacote. Para publicar, use `npm run deploy:cloudflare` na conta Cloudflare autorizada; esse comando aplica migrações D1 e publica o Worker. O Database ID já está configurado: `87762edb-d9b6-4dd7-bb72-9c3cc58329e4`. As migrações preservam os registros anteriores.
 
-`node --test tests/rental.test.mjs tests/catalog.test.js` — 17 verificações de faturamento, concorrência de reservas, bloqueios, cancelamento, alterações de tarifa, autenticação, consulta, idempotência e novos modelos.
+Em produção, o primeiro acesso `/admin` usa um segredo temporário `ADMIN_SETUP_KEY` de pelo menos 32 caracteres. Crie a senha administrativa e remova esse segredo após concluir. Não copie o override local `FLEET_OWNER_ID` para produção.
 
-`node node_modules/typescript/bin/tsc --noEmit` — tipos.
-
-Construir com o helper de build da habilidade Sites. As migrações são schema-only e foram geradas com `npm run db:generate`; dados iniciais são inseridos pela aplicação, fora das migrações.
-
-`node tests/render-rental.mjs && python3 tests/structure.py` verifica a renderização inicial com React, os arquivos de marca, os rótulos e as regras responsivas em 390, 768 e 1440 px. Validação visual em navegador ficou indisponível porque a interface de navegador autorizada não foi exposta neste ambiente.
-
-A revisão seguinte mantém publicação suspensa: a consulta de acesso ainda retorna público. É necessária aprovação explícita para restringir a audiência ou publicar publicamente. O número de WhatsApp oficial ainda deve ser informado para ativar o contato final com resumo da reserva.
-
-## Referência e contato
-
-WhatsApp oficial fornecido: (19) 97150-5878, link 5519971505878. Botões de contato no início e final; a conclusão da simulação envia resumo com moto, datas, pacote e total, identificando que é simulação. Contato padrão também disponível no painel.
-
-Referência solicitada: https://www.vammo.com, consultada em 14/10/2026. Adaptada a estrutura de chamada de aluguel, seleção de modelos, planos e contato. Marca, preços, cobertura e especificações da CaloriMob preservados. Nenhuma promessa de bateria ilimitada, suporte 24h ou serviços da Vammo foi transferida.
-
-Revisão: somente logo tipográfico no cabeçalho/rodapé; endereço de retirada fornecido em Av. dos Lírios, 142, Vila Maschietto, São José do Rio Pardo-SP, CEP 13720-146. Fotos enviadas copiadas sem edição em public/fleet: Ecoviva branca com cesto como JE-7; scooter preta com banco marrom como CX18; arte identificada Rio como Rio. Especificações permanecem as fornecidas, sem inferir potência pelo nome do arquivo. Publicação continua suspensa; prévia inline atualizada.
-
-Visual revisado para interface clara inspirada no iOS: superfícies brancas e cinza-claro, texto preto, tipografia nativa -apple-system/SF Pro nos dispositivos Apple e fontes de sistema equivalentes em outros dispositivos. Botões em cápsula, controles segmentados, separadores sutis e verde nas ações/valores. Tema claro mantido explicitamente. Sem alteração de regras de locação ou de visibilidade.
-
-Publicação pública autorizada explicitamente por Maicon para apresentação ao cliente. Página de demonstração funciona sem login nem chamadas às APIs de reservas; consulta local à simulação da sessão. Inicialização de banco sem proprietário é limitada ao proprietário verificado do Site, impedindo que visitantes assumam administração.
+Os registros iniciais e decisões substituídas estão no [histórico](docs/HISTORICO-VERSOES-INICIAIS.md); eles não representam o fluxo atual.

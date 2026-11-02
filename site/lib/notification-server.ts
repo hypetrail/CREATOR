@@ -201,5 +201,11 @@ export async function processNotifications({limit=20}:{limit?:number}={}){
 }
 export async function notificationAdmin(){
  const rows=await all<{id:string;reservation_id:string;reservation_code:string|null;kind:string;status:string;attempts:number;scheduled_ms:number;updated_ms:number;last_reason:string;provider_id:string}>('SELECT n.id,n.reservation_id,r.code reservation_code,n.kind,n.status,n.attempts,n.scheduled_ms,n.updated_ms,n.last_reason,n.provider_id FROM customer_notifications n LEFT JOIN reservations r ON r.id=n.reservation_id ORDER BY n.created_ms DESC LIMIT 100');
- return {reservation_messages:await simpleWhatsAppAdmin(),configuration:whatsappConfiguration(environment()),reminder_minutes:reminderMinutes(),marketing_interval_days:7,auto_availability:(await notificationSettings()).auto_availability,notifications:rows};
+ return {reservation_messages:await simpleWhatsAppAdmin(),configuration:whatsappConfiguration(environment()),reminder_minutes:120,marketing_interval_days:7,auto_availability:(await notificationSettings()).auto_availability,notifications:rows};
+}
+
+/** Runtime path for the new site: no account campaigns or legacy marketing. */
+export async function processOperationalNotifications({limit=20}:{limit?:number}={}){
+ const totals=await processReservationWhatsApp(limit);
+ return {...totals,message:'Fila operacional processada. Aceitação pelo provedor não confirma entrega; resultados incertos exigem conferência.'};
 }

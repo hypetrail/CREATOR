@@ -1,3 +1,3 @@
-import CustomerPortal from '../customer-portal';
+import {redirect} from 'next/navigation';
 
-export default function CustomerAccountPage() { return <CustomerPortal/>; }
+export default function CustomerAccountPage(){redirect('/');}

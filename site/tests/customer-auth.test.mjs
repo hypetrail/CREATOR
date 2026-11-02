@@ -31,25 +31,25 @@ test('customer registration uses salted standard password hashing and hashed Htt
  const token=cookie.split('=')[1],stored=sqlite.prepare('SELECT * FROM customer_sessions').get();assert.notEqual(stored.token_hash,token);assert.match(stored.token_hash,/^[a-f0-9]{64}$/);
  assert.match(result.setCookie,/HttpOnly/);assert.match(result.setCookie,/SameSite=Lax/);assert.match(result.setCookie,/Secure/);
  const identity=await auth.customerIdentity(request('me',undefined,cookie));assert.equal(identity.id,result.customer.id);
- const response=await route.GET(request('me',undefined,cookie)),payload=await response.json();assert.equal(payload.customer.id,result.customer.id);assert.equal(payload.phone_verification_configured,false);
+ const before=JSON.stringify(sqlite.prepare('SELECT * FROM customers').all());const response=await route.GET(request('me',undefined,cookie)),payload=await response.json();assert.equal(response.status,410);assert.match(response.headers.get('Set-Cookie'),/Max-Age=0/);assert.equal('customer' in payload,false);assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM customers').all()),before);
  for(const value of ['password_hash','token_hash',sample.password,sample.phone])assert.equal(JSON.stringify(payload).includes(value),false);
 });
 
-test('account routes reject mass assignment, weak passwords, cross-origin requests and oversized bodies',async()=>{
+test('retired account routes reject every request without creating customers or sessions; password validators remain intact',async()=>{
  fixture();
  await assert.rejects(()=>auth.registerCustomer(request('register',{}),{...sample,phone_verified:true}),status(400));
  for(const bad of ['curta','123456789012','aaaaaaaaaaaa'])await assert.rejects(()=>auth.hashCustomerPassword(bad),status(400));
- const cross=await route.POST(request('register',sample,'',{Origin:'https://attacker.test'}));assert.equal(cross.status,403);
- const insecure=new Request('http://calori.test/api/customer/me');assert.equal((await route.GET(insecure)).status,503);
- const huge=await route.POST(request('register',{padding:'x'.repeat(9000)}));assert.equal(huge.status,413);
- const registeredResponse=await route.POST(request('register',sample));assert.equal(registeredResponse.status,200);const body=await registeredResponse.json();assert.equal('setCookie' in body,false);assert.ok(registeredResponse.headers.get('Set-Cookie'));
- const duplicate=await route.POST(request('register',sample));assert.equal(duplicate.status,400);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,1);
+ const cross=await route.POST(request('register',sample,'',{Origin:'https://attacker.test'}));assert.equal(cross.status,410);
+ const insecure=new Request('http://calori.test/api/customer/me');assert.equal((await route.GET(insecure)).status,410);
+ const huge=await route.POST(request('register',{padding:'x'.repeat(9000)}));assert.equal(huge.status,410);
+ const registeredResponse=await route.POST(request('register',sample));assert.equal(registeredResponse.status,410);const body=await registeredResponse.json();assert.equal('customer' in body,false);assert.equal('setCookie' in body,false);assert.match(registeredResponse.headers.get('Set-Cookie'),/Max-Age=0/);
+ const duplicate=await route.POST(request('register',sample));assert.equal(duplicate.status,410);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,0);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customer_sessions').get().n,0);
 });
 
 test('login failures are generic, successful sessions expire and logout revokes the session',async()=>{
  fixture();await registered();
  for(const payload of [{...sample,password:'Senha incorreta de teste!'},{phone:'19888888888',password:sample.password}]){
-  const response=await route.POST(request('login',payload));assert.equal(response.status,401);assert.equal((await response.json()).error,'Telefone ou senha inválidos.');
+  await assert.rejects(()=>auth.loginCustomer(request('login',{}),payload),error=>error.status===401&&error.message==='Telefone ou senha inválidos.');const before=sqlite.prepare('SELECT COUNT(*) n FROM customer_sessions').get().n;const response=await route.POST(request('login',payload));assert.equal(response.status,410);assert.equal('customer' in await response.json(),false);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customer_sessions').get().n,before);
  }
  const logged=await auth.loginCustomer(request('login',{}),sample),cookie=sessionCookie(logged);
  assert.ok(await auth.customerIdentity(request('me',undefined,cookie)));
@@ -71,12 +71,11 @@ test('per-phone login throttling stores only expiring hashed rate keys',async()=
 function insertReservation(customerId,code){
  const id=crypto.randomUUID();sqlite.prepare(`INSERT INTO reservations (id,code,request_key,unit_id,model_id,model_name,start_ms,end_ms,days,daily_cents,protection_daily_cents,total_cents,name,phone,email,city,payment_method,payment_status,status,created_ms,customer_id,terms_snapshot) VALUES (?,?,?,?,?,?,0,172800000,2,3000,1500,9000,'','','','','pickup','pending','reserved',?,?,?)`).run(id,code,crypto.randomUUID(),'unit-'+id,'t1','T1',Date.now(),customerId,'{"document":{"version":"saved"}}');return id;
 }
-test('customer reservation listing is bound to the authenticated customer and never leaks another account or private identifiers',async()=>{
+test('archived reservation helpers preserve ownership while public listing and preference writes are retired',async()=>{
  fixture();const a=await registered(),b=await registered({phone:'19888888888'});const idA=insertReservation(a.result.customer.id,'CG-A');insertReservation(b.result.customer.id,'CG-B');
- const response=await route.GET(request('reservations',undefined,a.cookie));assert.equal(response.status,200);const result=await response.json();assert.equal(result.reservations.length,1);assert.equal(result.reservations[0].id,idA);assert.equal(result.reservations[0].code,'CG-A');assert.ok(result.server_now_ms);
+ const before=JSON.stringify(sqlite.prepare('SELECT * FROM reservations ORDER BY code').all());const result=await auth.customerReservations(request('reservations',undefined,a.cookie));assert.equal(result.reservations.length,1);assert.equal(result.reservations[0].id,idA);assert.equal(result.reservations[0].code,'CG-A');assert.ok(result.server_now_ms);
  for(const key of ['customer_id','request_key','request_fingerprint','name','phone','email','external_customer_ref'])assert.equal(key in result.reservations[0],false);
- assert.equal((await route.GET(request('reservations'))).status,401);
- assert.equal((await route.POST(request('preferences',{phone_verified:true},a.cookie))).status,400);
+ for(const session of ['',a.cookie,b.cookie]){const response=await route.GET(request('reservations',undefined,session));assert.equal(response.status,410);assert.equal('reservations' in await response.json(),false);}const customers=JSON.stringify(sqlite.prepare('SELECT * FROM customers ORDER BY id').all());assert.equal((await route.POST(request('preferences',{phone_verified:true},a.cookie))).status,410);assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM customers ORDER BY id').all()),customers);assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM reservations ORDER BY code').all()),before);
 });
 
 test('transactional and promotional consent are independent, reversible, and do not verify the phone',async()=>{
@@ -92,7 +91,7 @@ function mockWhatsApp(t){const original=globalThis.fetch,codes=[];globalThis.fet
 test('phone verification is honestly unavailable without provider configuration and never calls an external service',async t=>{
  fixture();const {cookie}=await registered(),original=globalThis.fetch;globalThis.fetch=()=>{throw new Error('No request expected');};t.after(()=>{globalThis.fetch=original;});
  const result=await auth.requestCustomerVerification(request('verify/request',{},cookie),{});assert.equal(result.status,'not_configured');assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customer_phone_challenges').get().n,0);
- assert.equal((await route.POST(request('verify/request',{}))).status,401);
+ assert.equal((await route.POST(request('verify/request',{}))).status,410);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customer_phone_challenges').get().n,0);
 });
 test('WhatsApp ownership requires a private expiring OTP, enforces cooldown and marks only the authenticated account verified',async t=>{
  fixture();otpConfiguration();const codes=mockWhatsApp(t),a=await registered(),b=await registered({phone:'19888888888'});
@@ -172,7 +171,7 @@ test('recovering a never-verified number creates a fresh identity without inheri
  await storage.saveCustomerProfile(original.result.customer.id,personal);
  await storage.saveReservationCustomer(reservationId,personal);
  const document=await storage.savePrivateReservationDocument({reservation:{id:reservationId},fontBytes:readFileSync('public/fonts/DejaVuSans.ttf')});
- assert.equal((await route.GET(request('documents/'+document.id,undefined,original.cookie))).status,200);
+ assert.equal((await storage.documentResponseForCustomer(document.id,original.result.customer.id)).status,200);assert.equal((await route.GET(request('documents/'+document.id,undefined,original.cookie))).status,410);
  bucketReads=0;
  await auth.requestCustomerPasswordReset(request('password/request',{}),{phone:sample.phone});
  const restored=await auth.resetCustomerPassword(request('password/reset',{}),{phone:sample.phone,code:codes.at(-1),password:'Outra pessoa novo acesso seguro!'});
@@ -181,10 +180,10 @@ test('recovering a never-verified number creates a fresh identity without inheri
  assert.match(restored.message,/conferidos pela loja/);
  const cookie=sessionCookie(restored);
  assert.equal(await auth.customerIdentity(request('me',undefined,original.cookie)),null);
- const profile=await (await route.GET(request('profile',undefined,cookie))).json();assert.equal(profile.profile,null);
- const reservations=await (await route.GET(request('reservations',undefined,cookie))).json();assert.deepEqual(reservations.reservations,[]);
- assert.equal((await route.GET(request('documents?reservation_id='+reservationId,undefined,cookie))).status,404);
- assert.equal((await route.GET(request('documents/'+document.id,undefined,cookie))).status,404);
+ assert.equal(await storage.readCustomerProfile(restored.customer.id),null);const profileResponse=await route.GET(request('profile',undefined,cookie));assert.equal(profileResponse.status,410);assert.equal('profile' in await profileResponse.json(),false);
+ const reservations=await auth.customerReservations(request('reservations',undefined,cookie));assert.deepEqual(reservations.reservations,[]);const retiredListing=await route.GET(request('reservations',undefined,cookie));assert.equal(retiredListing.status,410);assert.equal('reservations' in await retiredListing.json(),false);
+ assert.equal((await route.GET(request('documents?reservation_id='+reservationId,undefined,cookie))).status,410);await assert.rejects(()=>storage.listPrivateDocumentsForCustomer(reservationId,restored.customer.id),status(404));
+ assert.equal((await route.GET(request('documents/'+document.id,undefined,cookie))).status,410);await assert.rejects(()=>storage.documentResponseForCustomer(document.id,restored.customer.id),status(404));
  assert.equal(bucketReads,0);
  const retired=sqlite.prepare('SELECT phone,disabled,service_consent,marketing_consent FROM customers WHERE id=?').get(original.result.customer.id);
  assert.equal(retired.disabled,1);assert.match(retired.phone,/^reclaimed:/);assert.equal(retired.service_consent,0);assert.equal(retired.marketing_consent,0);
@@ -199,7 +198,7 @@ test('recovering a never-verified number creates a fresh identity without inheri
  const verified=await auth.resetCustomerPassword(request('password/reset',{}),{phone:sample.phone,code:codes.at(-1),password:'Nova senha do dono confirmado!'});
  assert.equal(verified.customer.id,restored.customer.id);
  assert.equal(verified.history_review_required,false);
- const preserved=await (await route.GET(request('profile',undefined,sessionCookie(verified)))).json();assert.equal(preserved.profile.name,own.name);
+ const preserved=await storage.readCustomerProfile(verified.customer.id);assert.equal(preserved.name,own.name);assert.equal((await route.GET(request('profile',undefined,sessionCookie(verified)))).status,410);
 });
 
 test('unverified recovery rolls back retirement atomically when the fresh identity cannot be created',async t=>{
@@ -212,4 +211,13 @@ test('unverified recovery rolls back retirement atomically when the fresh identi
  assert.ok(await auth.customerIdentity(request('me',undefined,original.cookie)));
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,1);
  assert.equal(sqlite.prepare('SELECT status FROM customer_password_resets').get().status,'active');
+});
+
+test('all retired customer endpoints refuse reads and writes without modifying historical customer records',async()=>{
+ fixture();const archived=await registered();insertReservation(archived.result.customer.id,'CG-ARCHIVED');
+ const state=()=>JSON.stringify({customers:sqlite.prepare('SELECT * FROM customers').all(),sessions:sqlite.prepare('SELECT * FROM customer_sessions').all(),reservations:sqlite.prepare('SELECT * FROM reservations').all()});const before=state();
+ for(const path of ['register','login','logout','me','profile','reservations','preferences','verify/request','verify/confirm','password/request','password/reset','offers','documents','documents/fake'])for(const method of ['GET','POST']){
+  const response=await route[method](request(path,method==='POST'?sample:undefined,archived.cookie));assert.equal(response.status,410,path+' '+method);const body=JSON.stringify(await response.json());for(const privateValue of [sample.phone,sample.password,archived.result.customer.id,'CG-ARCHIVED'])assert.equal(body.includes(privateValue),false);assert.match(response.headers.get('Cache-Control'),/no-store/);assert.match(response.headers.get('Set-Cookie'),/Max-Age=0/);
+ }
+ assert.equal(state(),before);
 });

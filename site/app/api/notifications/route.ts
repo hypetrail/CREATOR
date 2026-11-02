@@ -1,5 +1,5 @@
 import {env} from 'cloudflare:workers';
-import {processNotifications} from '../../../lib/notification-server';
+import {processOperationalNotifications} from '../../../lib/notification-server';
 import type {WhatsAppEnvironment} from '../../../lib/whatsapp-server';
 export const dynamic='force-dynamic';
 async function equalSecret(a:string,b:string){
@@ -12,6 +12,6 @@ export async function POST(request:Request){
  if(!secret||secret.length<32)return Response.json({error:'Agendamento de notificações não configurado.'},{status:503,headers});
  const authorization=request.headers.get('authorization')||'';
  if(authorization.length>1024||!authorization.startsWith('Bearer ')||!await equalSecret(authorization.slice(7),secret))return Response.json({error:'Acesso não autorizado.'},{status:401,headers});
- try{return Response.json(await processNotifications({limit:20}),{headers});}
+ try{return Response.json(await processOperationalNotifications({limit:20}),{headers});}
  catch{return Response.json({error:'Não foi possível processar as notificações. Consulte o painel.'},{status:503,headers});}
 }
