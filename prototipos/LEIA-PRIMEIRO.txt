@@ -1,0 +1,49 @@
+PAINEL HTML DE DEMONSTRAÇÃO — CALORIMOB
+
+COMO ABRIR
+1. Salve CaloriMob-Painel-Administrador.html no computador.
+2. Dê dois cliques no arquivo para abri-lo em Chrome, Edge ou Firefox.
+3. Não precisa instalar Node/npm, contratar hospedagem ou ter internet.
+   Não precisa fazer login: este arquivo é somente uma demonstração.
+
+O QUE EXPERIMENTAR
+- Frota e modelos: editar tarifas, criar/ocultar modelos, cadastrar unidades,
+  colocar em manutenção ou fora de operação.
+- Calendário: consultar datas e registrar/remover bloqueios.
+- Reservas: criar reserva manual e abrir o exemplo DEMO-0001.
+  Inicie preparação, libere retirada após o checklist, faça a vistoria de saída
+  e registre a retirada para ver a contagem do período. Para devolver, registre
+  a vistoria de retorno e confirme a devolução.
+- Vistorias: Preencher exemplo fictício marca o checklist e insere nomes de
+  fotos fictícias; nenhuma foto é lida ou enviada.
+- Avisos: ver os textos e simular o processamento. Nenhuma mensagem é enviada.
+- Documentos: visualizar o exemplo das condições e cuidados, sem emitir contrato.
+- Registros: lançar uma manutenção, ocorrência ou despesa de teste.
+- Aparência, no topo: mudar cor principal, fundo, modo claro/escuro e cartões.
+
+PREÇOS INICIAIS
+T1: uma diária R$ 60 com proteção; a partir de dois dias R$ 45/dia
+(R$ 30 locação + R$ 15 proteção). Cada reserva guarda a tarifa combinada.
+Atraso: descontar 2 horas e cobrar cada hora iniciada em 1/24 da diária aceita.
+Intervalo de preparação entre locações: 3 horas.
+
+ONDE FICAM AS ALTERAÇÕES
+Só no navegador usado para abrir este arquivo, quando o navegador permite.
+Se o navegador bloquear o armazenamento, o painel informa e continua funcionando
+na aba atual. Exportar alterações baixa uma cópia JSON dos testes para referência;
+esta versão não possui importação. Recomeçar restaura os exemplos e as cores.
+Mover/renomear o arquivo, trocar de navegador ou limpar dados pode reiniciar os testes.
+
+LIMITES DA DEMONSTRAÇÃO
+Use somente dados fictícios. O HTML não acessa o D1, o sistema real, a internet,
+as fotos do computador ou a API de WhatsApp. Não realiza pagamentos, uploads,
+assinaturas ou envio de mensagens. As mudanças de aparência e operação não
+alteram o site publicado. O aviso de moto pronta só é preparado após liberação.
+O controle seguro de produção continua no servidor; este arquivo é a prévia local.
+
+VERIFICAÇÃO
+A interface e os fluxos foram conferidos no Chromium por HTTP de loopback,
+sem nenhuma requisição externa. A política do Chromium gerenciado deste
+ambiente bloqueia file://; não houve teste de file:// neste ambiente.
+O arquivo foi construído sem dependências externas para ser aberto localmente
+no navegador do usuário. Não há compilação ou serviço externo necessário.
