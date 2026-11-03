@@ -1,5 +1,7 @@
 # Publicar no Cloudflare pelo painel e pelo GitHub
 
+Para acompanhar desde a criação da conta, consulte [Colocar no ar do zero](COLOCAR-NO-AR-DO-ZERO.md).
+
 Este é o caminho para publicar o site completo. O uploader de ZIP/arquivos prontos não compila TypeScript nem prepara banco e servidor. Use **Cloudflare Workers**, importando o repositório GitHub.
 
 A configuração desta entrega mantém o catálogo público, sem conta ou cadastro completo de cliente, e usa um login próprio para a administração. A reserva solicita apenas WhatsApp, nome opcional e autorização para os avisos operacionais. O primeiro acesso do administrador e sua recuperação dependem de uma chave provisória cadastrada pelo proprietário no painel Cloudflare. Não é necessário contratar outro serviço de autenticação, conectar e-mail ou instalar um app para começar.
@@ -53,7 +55,7 @@ Se escolheu nomes diferentes ou mudar o banco, adicione também:
 
 São identificadores de implantação, sem senhas. A configuração no GitHub já contém o Database ID fornecido pelo proprietário. O build continua recusando identificadores inválidos ou provisórios. Os scripts geram uma única conexão **DB** e um único agendamento de cinco minutos.
 
-O deploy executa o Wrangler em duas etapas: aplica as migrações no D1 indicado e publica o Worker compilado em `dist/server/wrangler.json`. A conta/token de deploy usada pelo Cloudflare precisa poder publicar Workers e aplicar migrações D1; o acesso ao GitHub sozinho não concede essa permissão no Cloudflare.
+O deploy executa o Wrangler em duas etapas: aplica as migrações no D1 indicado e publica o Worker compilado em `dist/server/wrangler.json`. A conta/token de deploy usada pelo Cloudflare precisa poder publicar Workers e aplicar migrações D1; o acesso ao GitHub sozinho não concede essa permissão no Cloudflare. Confira no token de publicação a permissão **Account → D1 → Edit**, além de **Workers Scripts → Edit**. A autorização padrão do Workers Builds pode não incluir D1. O guia desde o início mostra como criar e selecionar um token adequado.
 
 ## 4. Primeira publicação
 
@@ -82,7 +84,7 @@ A sessão administrativa dura até oito horas. O botão **Sair** encerra o acess
 
 Após criar a senha, a tela **/admin/configuracao** e o painel **Avisos** ajudam a conferir a situação da operação. O fluxo novo guarda o contato mínimo no D1 privado e não exige criar uma chave `CUSTOMER_DATA_KEY`.
 
-Para ativar os envios, conecte a WhatsApp Business Cloud API oficial e cadastre no Worker:
+Para ativar os envios, conecte a WhatsApp Business Cloud API oficial e cadastre no Worker, em **Settings → Variables and Secrets**, todos os valores abaixo como **Secret**. Também usamos esse tipo para os identificadores, para preservar a configuração do painel nas próximas publicações pelo GitHub; na configuração atual, variáveis de execução do tipo Text podem ser sobrescritas pelo deploy.
 
 | Nome | Como configurar |
 | --- | --- |
@@ -124,7 +126,7 @@ Se esquecer a senha, adicione novamente uma nova chave provisória de pelo menos
 
 - `npm test`
 - `npx tsc --noEmit`
-- `npm run build:cloudflare`, com identificador sintético apenas nos testes
+- `npm run build:cloudflare`, com validação local e sem conexão ao banco remoto
 - `npm run deploy:cloudflare -- --dry-run`, sem publicar nem migrar banco remoto
 - Teste no navegador do Worker compilado, em D1 local isolado
 

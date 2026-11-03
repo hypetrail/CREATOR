@@ -3,6 +3,7 @@
 O site está em [`site/`](site/). O cliente reserva pelo WhatsApp, sem criar conta. A administração controla frota, disponibilidade, preços e operação; o servidor prepara os avisos da locação.
 
 - [Fluxo atual sem cadastro de cliente](site/docs/NOVO-FLUXO-SEM-CADASTRO.md)
+- [Passo a passo para colocar no ar, desde a criação da conta](site/docs/COLOCAR-NO-AR-DO-ZERO.md)
 - [Publicar no Cloudflare pelo painel e GitHub](site/docs/PUBLICAR-CLOUDFLARE-PELO-PAINEL.md)
 - [Gerenciar a frota e as reservas](site/docs/COMO-GERENCIAR-A-FROTA.md)
 - [Validação da entrega](site/docs/VALIDACAO-CLOUDFLARE.md)
