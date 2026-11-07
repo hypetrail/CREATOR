@@ -3,7 +3,10 @@ import {db,HttpError} from './rental-server';
 import {phone as normalizePhone} from './rental';
 import {whatsappAuthConfigured,sendWhatsAppAuthCode,type WhatsAppEnvironment} from './whatsapp-server';
 
-const COOKIE='calori_customer',SESSION_MS=7*86400_000,PASSWORD_ITERATIONS=600_000;
+const COOKIE='calori_customer',SESSION_MS=7*86400_000,PASSWORD_ITERATIONS=100_000;
+// Stay within hosted Workers' PBKDF2 limit. Existing hashes retain their own
+// work factor; never reinterpret a legacy hash using the new iteration count.
+const PASSWORD_WORK_FACTORS=new Set([String(PASSWORD_ITERATIONS),'600000']);
 const encoder=new TextEncoder();
 const CONSENT_VERSION='customer-whatsapp-v1';
 type Input=Record<string,unknown>;
@@ -45,9 +48,9 @@ function password(value:unknown,register=false){
  }
  return value;
 }
-async function derive(value:string,salt:Uint8Array){
+async function derive(value:string,salt:Uint8Array,iterations=PASSWORD_ITERATIONS){
  const key=await crypto.subtle.importKey('raw',encoder.encode(value),{name:'PBKDF2'},false,['deriveBits']);
- return hex(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new Uint8Array(salt),iterations:PASSWORD_ITERATIONS},key,256)));
+ return hex(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new Uint8Array(salt),iterations},key,256)));
 }
 export async function hashCustomerPassword(value:string){
  password(value,true);
@@ -56,8 +59,8 @@ export async function hashCustomerPassword(value:string){
 }
 async function verifyPassword(value:string,encoded:string){
  const parts=encoded.split('$');
- if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||parts[1]!==String(PASSWORD_ITERATIONS)||!/^([a-f0-9]{64})$/.test(parts[2])||!/^([a-f0-9]{64})$/.test(parts[3]))return false;
- return equals(await derive(value,fromHex(parts[2])),parts[3]);
+ if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||!PASSWORD_WORK_FACTORS.has(parts[1])||!/^([a-f0-9]{64})$/.test(parts[2])||!/^([a-f0-9]{64})$/.test(parts[3]))return false;
+ return equals(await derive(value,fromHex(parts[2]),Number(parts[1])),parts[3]);
 }
 export {verifyPassword as verifyCustomerPassword};
 const dummyHash=`pbkdf2-sha256$${PASSWORD_ITERATIONS}$${'0'.repeat(64)}$${'0'.repeat(64)}`;

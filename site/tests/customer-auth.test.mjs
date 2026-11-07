@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {pbkdf2Sync} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {build} from 'esbuild';
 import {createRequire} from 'node:module';
@@ -22,11 +23,33 @@ const sessionCookie=result=>result.setCookie.split(';')[0];
 async function registered(extra={}){const result=await auth.registerCustomer(request('register',{}),{...sample,...extra});return {result,cookie:sessionCookie(result)};}
 const status=code=>error=>error.status===code;
 
+test('password verification uses the recorded work factor for current and legacy hashes',async()=>{
+ const salt=Buffer.alloc(32,0x42);
+ for(const iterations of [100000,600000]){
+  const digest=pbkdf2Sync(sample.password,salt,iterations,32,'sha256').toString('hex');
+  const encoded=`pbkdf2-sha256$${iterations}$${salt.toString('hex')}$${digest}`;
+  assert.equal(await auth.verifyCustomerPassword(sample.password,encoded),true);
+  assert.equal(await auth.verifyCustomerPassword('Uma senha diferente de teste!',encoded),false);
+ }
+});
+
+test('unrecognized hash formats and arbitrary work factors are rejected before deriving',async t=>{
+ const derive=t.mock.method(crypto.subtle,'deriveBits',async()=>{throw new Error('Unsupported hash must not run');});
+ const salt='ab'.repeat(32),digest='cd'.repeat(32);
+ for(const iterations of ['0','1','100001','600001','999999999','0100000','1e5']){
+  assert.equal(await auth.verifyCustomerPassword(sample.password,`pbkdf2-sha256$${iterations}$${salt}$${digest}`),false);
+ }
+ for(const encoded of [`other$100000$${salt}$${digest}`,`pbkdf2-sha256$100000$short$${digest}`,`pbkdf2-sha256$100000$${salt}$bad`,`pbkdf2-sha256$100000$${salt}$${digest}$extra`]){
+  assert.equal(await auth.verifyCustomerPassword(sample.password,encoded),false);
+ }
+ assert.equal(derive.mock.callCount(),0);
+});
+
 test('customer registration uses salted standard password hashing and hashed HttpOnly sessions without returning secrets',async()=>{
  fixture();const {result,cookie}=await registered();
  assert.equal(result.customer.phone_verified,false);assert.equal(result.customer.operational_whatsapp,false);assert.equal(result.customer.marketing_whatsapp,false);
  assert.ok(result.customer.phone_masked.endsWith('9999'));assert.equal('phone' in result.customer,false);
- const row=sqlite.prepare('SELECT * FROM customers').get();assert.match(row.password_hash,/^pbkdf2-sha256\$600000\$[a-f0-9]{64}\$[a-f0-9]{64}$/);assert.equal(row.password_hash.includes(sample.password),false);
+ const row=sqlite.prepare('SELECT * FROM customers').get();assert.match(row.password_hash,/^pbkdf2-sha256\$100000\$[a-f0-9]{64}\$[a-f0-9]{64}$/);assert.equal(row.password_hash.includes(sample.password),false);
  const second=await auth.hashCustomerPassword(sample.password);assert.notEqual(second,row.password_hash);
  const token=cookie.split('=')[1],stored=sqlite.prepare('SELECT * FROM customer_sessions').get();assert.notEqual(stored.token_hash,token);assert.match(stored.token_hash,/^[a-f0-9]{64}$/);
  assert.match(result.setCookie,/HttpOnly/);assert.match(result.setCookie,/SameSite=Lax/);assert.match(result.setCookie,/Secure/);

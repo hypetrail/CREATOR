@@ -82,6 +82,8 @@ Ao concluir, o painel mostra o endereço real `workers.dev`. Ele permite abrir o
 
 ## 6. Criar o primeiro administrador
 
+Se o site já foi publicado e uma senha válida foi recusada, consulte [a correção do acesso administrativo](ACESSO-ADMINISTRATIVO.md). Não repita a exclusão de recursos das etapas iniciais.
+
 1. Abra **calori-go → Configurações → Variáveis e segredos em tempo de execução**.
 2. Adicione um segredo chamado `ADMIN_SETUP_KEY`.
 3. Use uma chave aleatória de pelo menos 32 caracteres, gerada e guardada por você.

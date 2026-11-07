@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {pbkdf2Sync} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {build} from 'esbuild';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const compiled=await build({entryPoints:['lib/admin-password-server.ts'],bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'env',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'env'}));b.onLoad({filter:/.*/,namespace:'env'},()=>({contents:'export const env={};'}));}}]});
-const module={exports:{}};new Function('module','exports','require',compiled.outputFiles[0].text)(module,module.exports,require);
-const {adminPasswordBoundary}=module.exports;
+const compiledModule={exports:{}};new Function('module','exports','require',compiled.outputFiles[0].text)(compiledModule,compiledModule.exports,require);
+const {adminPasswordBoundary}=compiledModule.exports;
 let sqlite,beforeSessionInsert;
 function adapter(c){return {prepare(sql){let args=[];return {bind(...a){args=a;return this;},async first(){if(beforeSessionInsert&&sql.startsWith('INSERT INTO admin_sessions')){const action=beforeSessionInsert;beforeSessionInsert=null;await action();}return c.prepare(sql).get(...args)||null;},async run(){return {meta:{changes:Number(c.prepare(sql).run(...args).changes)}};}};}};}
 function fixture(){beforeSessionInsert=null;sqlite?.close();sqlite=new DatabaseSync(':memory:');for(const f of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+f,'utf8'));return {DB:adapter(sqlite),ADMIN_SETUP_KEY:'synthetic-bootstrap-test-key-2026-not-real'};}
@@ -16,7 +17,7 @@ function request(path,{body,cookie,headers={},origin='https://calori.test'}={}){
 const setup=(env,extra={})=>adminPasswordBoundary(request('/admin/primeiro-acesso',{body:{setup_key:env.ADMIN_SETUP_KEY,password,confirmation:password,...extra}}),env);
 const cookieOf=response=>response.headers.get('set-cookie').split(';')[0];
 test('public requests always discard spoofed hosting identity; protected requests need their own admin session',async()=>{const env=fixture();const r=await adminPasswordBoundary(request('/api/fleet/catalog',{headers:{'oai-authenticated-user-id':'spoof','oai-authenticated-user-email':'spoof@example.com'}}),env);assert.ok(r instanceof Request);assert.equal(r.headers.get('oai-authenticated-user-id'),null);const blocked=await adminPasswordBoundary(request('/api/fleet/admin',{headers:{'oai-authenticated-user-id':'spoof'}}),env);assert.equal(blocked.status,401);assert.equal((await adminPasswordBoundary(request('/admin'),env)).headers.get('location'),'/admin/primeiro-acesso');assert.equal((await adminPasswordBoundary(request('/admin/primeiro-acesso'),env)).headers.get('Referrer-Policy'),'same-origin');});
-test('initial administrator setup requires configured secret and creates only a password hash and hashed session',async()=>{const env=fixture();assert.equal((await setup({...env,ADMIN_SETUP_KEY:undefined})).status,503);assert.equal((await setup(env,{setup_key:'incorrect'})).status,401);const r=await setup(env);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/admin/configuracao');const cookie=r.headers.get('set-cookie');for(const value of ['__Host-calori_admin=','HttpOnly','Secure','SameSite=Lax','Path=/'])assert.ok(cookie.includes(value));const record=sqlite.prepare('SELECT * FROM admin_credentials').get();assert.match(record.password_hash,/^pbkdf2-sha256\$600000\$/);assert.equal(JSON.stringify(record).includes(password),false);const session=sqlite.prepare('SELECT * FROM admin_sessions').get();assert.equal(session.token_hash.includes(cookieOf(r).split('=')[1]),false);assert.equal((await setup(env)).status,409);});
+test('initial administrator setup requires configured secret and creates only a password hash and hashed session',async()=>{const env=fixture();assert.equal((await setup({...env,ADMIN_SETUP_KEY:undefined})).status,503);assert.equal((await setup(env,{setup_key:'incorrect'})).status,401);const r=await setup(env);assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/admin/configuracao');const cookie=r.headers.get('set-cookie');for(const value of ['__Host-calori_admin=','HttpOnly','Secure','SameSite=Lax','Path=/'])assert.ok(cookie.includes(value));const record=sqlite.prepare('SELECT * FROM admin_credentials').get();assert.match(record.password_hash,/^pbkdf2-sha256\$100000\$/);assert.equal(JSON.stringify(record).includes(password),false);const session=sqlite.prepare('SELECT * FROM admin_sessions').get();assert.equal(session.token_hash.includes(cookieOf(r).split('=')[1]),false);assert.equal((await setup(env)).status,409);});
 test('valid admin session injects a fixed internal owner identity and never accepts caller identity',async()=>{const env=fixture();const first=await setup(env),cookie=cookieOf(first);const allowed=await adminPasswordBoundary(request('/api/fleet/admin',{cookie,headers:{'oai-authenticated-user-id':'attacker'}}),env);assert.ok(allowed instanceof Request);assert.notEqual(allowed.headers.get('oai-authenticated-user-id'),'attacker');assert.equal(allowed.headers.get('oai-authenticated-user-email'),'administrador@calorimob.local');assert.equal((await adminPasswordBoundary(request('/api/fleet/admin',{cookie:'calori_customer='+cookie.split('=')[1]}),env)).status,401);const settings=await adminPasswordBoundary(request('/admin/configuracao',{cookie}),env);const settingsHtml=await settings.text();assert.match(settingsHtml,/WhatsApp no servidor/);assert.match(settingsHtml,/Clientes reservam sem conta/);assert.doesNotMatch(settingsHtml,/Gerar chave do cadastro|id="generate"/);assert.match(settings.headers.get('Content-Security-Policy'),/frame-ancestors 'none'/);});
 test('login rejects invalid passwords, CSRF and malformed submissions; rate limits are shared across requests',async()=>{const env=fixture();await setup(env);assert.equal((await adminPasswordBoundary(request('/admin/entrar',{body:{password},origin:'https://other.test'}),env)).status,403);const bad=await adminPasswordBoundary(request('/admin/entrar',{body:{password:'invalid'}}),env);assert.equal(bad.headers.get('set-cookie'),null);const good=await adminPasswordBoundary(request('/admin/entrar',{body:{password}}),env);assert.equal(good.status,303);for(let i=0;i<8;i++)await adminPasswordBoundary(request('/admin/entrar',{body:{password:'invalid'}}),env);assert.equal((await adminPasswordBoundary(request('/admin/entrar',{body:{password}}),env)).status,429);});
 test('session expiry and password recovery revoke prior sessions; recovery needs the deployment secret',async(t)=>{const env=fixture(),first=await setup(env),cookie=cookieOf(first);const before=Date.now;t.after(()=>{Date.now=before;});Date.now=()=>before()+9*3600000;assert.equal((await adminPasswordBoundary(request('/api/fleet/admin',{cookie}),env)).status,401);Date.now=before;assert.equal((await adminPasswordBoundary(request('/admin/recuperar',{body:{setup_key:'wrong',password,confirmation:password}}),env)).status,401);const next='Nova senha segura admin 2026!';const recovered=await adminPasswordBoundary(request('/admin/recuperar',{body:{setup_key:env.ADMIN_SETUP_KEY,password:next,confirmation:next}}),env);assert.equal(recovered.status,303);assert.equal((await adminPasswordBoundary(request('/api/fleet/admin',{cookie}),env)).status,401);assert.ok(await adminPasswordBoundary(request('/api/fleet/admin',{cookie:cookieOf(recovered)}),env) instanceof Request);});
@@ -34,3 +35,84 @@ test('configuration lists server-side WhatsApp field names without exposing secr
 test('concurrent initial setups elect only one administrator',async()=>{const env=fixture();const results=await Promise.all([setup(env),setup(env)]);assert.equal(results.filter(r=>r.status===303).length,1);assert.equal(results.filter(r=>r.status===409).length,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM admin_credentials').get().n,1);});
 
 test('a login verified before credential rotation cannot create a new privileged session afterwards',async()=>{const env=fixture();await setup(env);beforeSessionInsert=()=>{sqlite.prepare("UPDATE admin_credentials SET version=? WHERE id='owner'").run(crypto.randomUUID());};const response=await adminPasswordBoundary(request('/admin/entrar',{body:{password}}),env);assert.equal(response.status,409);assert.equal(response.headers.get('set-cookie'),null);});
+
+test('setup, login and recovery work when the hosting runtime caps PBKDF2 at 100000 iterations',async t=>{
+ const nativeDerive=crypto.subtle.deriveBits.bind(crypto.subtle),iterations=[];
+ t.mock.method(crypto.subtle,'deriveBits',async(algorithm,key,length)=>{
+  if(algorithm.name==='PBKDF2'){
+   iterations.push(algorithm.iterations);
+   if(algorithm.iterations>100000)throw new DOMException('Pbkdf2 failed: iteration counts above 100000 are not supported.','NotSupportedError');
+  }
+  return nativeDerive(algorithm,key,length);
+ });
+ const env=fixture(),created=await setup(env);
+ assert.equal(created.status,303);
+ const originalCookie=cookieOf(created);
+ const login=await adminPasswordBoundary(request('/admin/entrar',{body:{password}}),env);
+ assert.equal(login.status,303);
+ const next='Outra senha fictícia de teste!';
+ const recovery=await adminPasswordBoundary(request('/admin/recuperar',{body:{setup_key:env.ADMIN_SETUP_KEY,password:next,confirmation:next}}),env);
+ assert.equal(recovery.status,303);
+ assert.equal((await adminPasswordBoundary(request('/api/fleet/admin',{cookie:originalCookie}),env)).status,401);
+ assert.equal((await adminPasswordBoundary(request('/admin/entrar',{body:{password:next}}),env)).status,303);
+ assert.ok(iterations.length>=4);
+ assert.ok(iterations.every(value=>value===100000));
+});
+
+test('a hashing service failure is a technical error and does not create credentials or sessions',async t=>{
+ t.mock.method(crypto.subtle,'deriveBits',async()=>{throw new DOMException('Synthetic provider failure','OperationError');});
+ const env=fixture(),response=await setup(env),body=await response.text();
+ assert.equal(response.status,503);
+ assert.doesNotMatch(body,/12 a 128|evitando sequências|senhas comuns|Synthetic provider failure/);
+ assert.match(body,/Não foi possível proteger a senha/);
+ assert.equal(response.headers.get('set-cookie'),null);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM admin_credentials').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM admin_sessions').get().n,0);
+ assert.equal(body.includes(password),false);
+});
+
+test('weak administrator passwords still fail validation before any hashing work',async t=>{
+ const derive=t.mock.method(crypto.subtle,'deriveBits',async()=>{throw new Error('Hash must not run for invalid passwords');});
+ for(const value of ['curta','aaaaaaaaaaaa','123456789012','password1234','x'.repeat(129)]){
+  const env=fixture();
+  const response=await setup(env,{password:value,confirmation:value});
+  assert.equal(response.status,400);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM admin_credentials').get().n,0);
+ }
+ assert.equal(derive.mock.callCount(),0);
+});
+
+test('a legacy credential rejected by the hosting limit can be recovered without resetting the database',async t=>{
+ const env=fixture(),created=await setup(env),originalCookie=cookieOf(created);
+ const salt=Buffer.alloc(32,0x42),digest=pbkdf2Sync(password,salt,600000,32,'sha256').toString('hex');
+ const legacy=`pbkdf2-sha256$600000$${salt.toString('hex')}$${digest}`;
+ sqlite.prepare("UPDATE admin_credentials SET password_hash=? WHERE id='owner'").run(legacy);
+ const nativeDerive=crypto.subtle.deriveBits.bind(crypto.subtle);
+ t.mock.method(crypto.subtle,'deriveBits',async(algorithm,key,length)=>{
+  if(algorithm.name==='PBKDF2'&&algorithm.iterations>100000)throw new DOMException('Synthetic hosting limit','NotSupportedError');
+  return nativeDerive(algorithm,key,length);
+ });
+ const rejected=await adminPasswordBoundary(request('/admin/entrar',{body:{password}}),env);
+ assert.equal(rejected.status,503);
+ assert.match(await rejected.text(),/Não foi possível verificar a senha/);
+ assert.equal(rejected.headers.get('set-cookie'),null);
+ assert.equal(sqlite.prepare('SELECT password_hash FROM admin_credentials').get().password_hash,legacy);
+ const next='Senha nova fictícia para recuperação!';
+ const recovered=await adminPasswordBoundary(request('/admin/recuperar',{body:{setup_key:env.ADMIN_SETUP_KEY,password:next,confirmation:next}}),env);
+ assert.equal(recovered.status,303);
+ assert.match(sqlite.prepare('SELECT password_hash FROM admin_credentials').get().password_hash,/^pbkdf2-sha256\$100000\$/);
+ assert.equal((await adminPasswordBoundary(request('/api/fleet/admin',{cookie:originalCookie}),env)).status,401);
+ assert.equal((await adminPasswordBoundary(request('/admin/entrar',{body:{password:next}}),env)).status,303);
+});
+
+test('a technical failure during password recovery preserves the existing credential and sessions',async t=>{
+ const env=fixture();await setup(env);
+ const state=()=>JSON.stringify({credentials:sqlite.prepare('SELECT * FROM admin_credentials').all(),sessions:sqlite.prepare('SELECT * FROM admin_sessions').all()});
+ const before=state();
+ t.mock.method(crypto.subtle,'deriveBits',async()=>{throw new DOMException('Synthetic provider failure','OperationError');});
+ const next='Senha fictícia para testar uma falha!';
+ const response=await adminPasswordBoundary(request('/admin/recuperar',{body:{setup_key:env.ADMIN_SETUP_KEY,password:next,confirmation:next}}),env);
+ assert.equal(response.status,503);
+ assert.equal(response.headers.get('set-cookie'),null);
+ assert.equal(state(),before);
+});

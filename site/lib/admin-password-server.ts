@@ -1,4 +1,5 @@
 import {hashCustomerPassword,verifyCustomerPassword} from './customer-auth';
+import {HttpError} from './rental-server';
 import {whatsappConfiguration,type WhatsAppEnvironment} from './whatsapp-server';
 import {siteOwnerId} from './site-owner';
 
@@ -76,13 +77,21 @@ export async function adminPasswordBoundary(req:Request,environment:AdminEnviron
    const value=input.get('password')||'';
    if(encoder.encode(value).length>512||Array.from(value).length>128)throw new AdminError(400,'Confira a senha informada.');
    if(kind==='entrar'){
-    if(!existing||!await verifyCustomerPassword(value,existing.password_hash))return form(kind,'Senha inválida.');
+    let valid=false;
+    try{valid=!!existing&&await verifyCustomerPassword(value,existing.password_hash);}
+    catch{throw new AdminError(503,'Não foi possível verificar a senha neste momento. Tente novamente mais tarde ou use a recuperação de acesso.');}
+    if(!existing||!valid)return form(kind,'Senha inválida.');
     return redirect('/admin',await createSession(db,existing));
    }
    if(kind==='primeiro-acesso'&&existing)throw new AdminError(409,'O acesso já foi criado. Entre com a senha cadastrada.');
    await setupAllowed(input.get('setup_key')||'',environment);
    if(value!==input.get('confirmation'))throw new AdminError(400,'As duas senhas precisam ser iguais.');
-   let hash:string;try{hash=await hashCustomerPassword(value);}catch{throw new AdminError(400,'Use uma senha de 12 a 128 caracteres, evitando sequências e senhas comuns.');}
+   let hash:string;
+   try{hash=await hashCustomerPassword(value);}
+   catch(error){
+    if(error instanceof HttpError&&error.status===400)throw new AdminError(400,'Use uma senha de 12 a 128 caracteres, evitando sequências e senhas comuns.');
+    throw new AdminError(503,'Não foi possível proteger a senha neste momento. Tente novamente mais tarde.');
+   }
    const version=crypto.randomUUID(),now=Date.now();
    const saved=kind==='primeiro-acesso'
     ?await db.prepare("INSERT OR IGNORE INTO admin_credentials (id,password_hash,version,created_ms,updated_ms) VALUES ('owner',?,?,?,?) RETURNING version").bind(hash,version,now,now).first()
