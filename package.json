@@ -1,0 +1,15 @@
+{
+  "name": "calorimob",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Site e painel de locação CaloriMob",
+  "engines": {"node": "24.x"},
+  "scripts": {
+    "build": "npm run build:cloudflare",
+    "build:cloudflare": "npm --prefix site ci --include=dev --include=optional --no-audit --no-fund && npm --prefix site run build:cloudflare",
+    "deploy:cloudflare": "npm --prefix site run deploy:cloudflare --",
+    "start": "npm --prefix site start --",
+    "test": "npm --prefix site test",
+    "check:types": "npm --prefix site run check:types"
+  }
+}

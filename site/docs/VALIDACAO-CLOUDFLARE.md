@@ -1,5 +1,7 @@
 # Validação para publicação no Cloudflare
 
+Registro histórico de 02/11/2026. Consulte a [revisão atual](REVISAO-PARA-NOVA-PUBLICACAO.md) e o [roteiro atualizado](COLOCAR-NO-AR-DO-ZERO.md) para a nova instalação.
+
 Versão sem conta de cliente, verificada localmente em 02/11/2026:
 
 - **177 testes automatizados aprovados**, sem falhas ou testes ignorados.
@@ -29,7 +31,7 @@ Nenhum erro de JavaScript foi observado nesses fluxos. Nenhuma mensagem WhatsApp
 
 ## Limites desta validação
 
-O D1 de produção está identificado no projeto como `calori-go-db`, ID `87762edb-d9b6-4dd7-bb72-9c3cc58329e4`. A configuração não comprova acesso à conta Cloudflare: publicação, migrações remotas, permissões, domínio e segredos ainda precisam ser conferidos na hospedagem.
+O D1 daquela entrega foi substituído a pedido do proprietário. Consulte o ID atual no roteiro de publicação e em `site/wrangler.json`. A configuração não comprova acesso à conta Cloudflare: publicação, migrações remotas, permissões, domínio e segredos ainda precisam ser conferidos na hospedagem.
 
 O envio real exige número e token da Meta, versão da API e template utilitário aprovado. Aceitação pela API não comprova entrega. Cadastre os segredos no Worker, nunca no frontend ou GitHub. Preserve a chave original se houver cadastro histórico cifrado.
 

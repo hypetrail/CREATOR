@@ -9,7 +9,7 @@ A aplicação usa React/TypeScript, Worker Cloudflare e um banco D1 para frota, 
 - [Fluxo atual sem cadastro](docs/NOVO-FLUXO-SEM-CADASTRO.md)
 - [Publicar no Cloudflare pelo painel e GitHub](docs/PUBLICAR-CLOUDFLARE-PELO-PAINEL.md)
 - [Como gerenciar a frota](docs/COMO-GERENCIAR-A-FROTA.md)
-- [Validação da versão](docs/VALIDACAO-CLOUDFLARE.md)
+- [Revisão para a nova instalação](docs/REVISAO-PARA-NOVA-PUBLICACAO.md)
 
 ## Operação
 
@@ -37,7 +37,9 @@ npm run build:cloudflare
 npm run deploy:cloudflare -- --dry-run
 ```
 
-O último comando apenas valida o pacote. Para publicar, use `npm run deploy:cloudflare` na conta Cloudflare autorizada; esse comando aplica migrações D1 e publica o Worker. O Database ID já está configurado: `87762edb-d9b6-4dd7-bb72-9c3cc58329e4`. As migrações preservam os registros anteriores.
+Os comandos acima são executados dentro desta pasta para desenvolvimento. No painel Cloudflare, use a branch `main` e a raiz do repositório (`/`): os comandos equivalentes da raiz cuidam desta pasta automaticamente. Node 24 é escolhido por `.node-version`.
+
+O último comando apenas valida o pacote. Para publicar, use `npm run deploy:cloudflare` na conta Cloudflare autorizada; esse comando aplica migrações D1 e publica o Worker. O novo Database ID já está configurado: `72584dd8-cc93-41f6-8495-b396a45a4d83`. As atualizações posteriores preservam os registros desse banco.
 
 Em produção, o primeiro acesso `/admin` usa um segredo temporário `ADMIN_SETUP_KEY` de pelo menos 32 caracteres. Crie a senha administrativa e remova esse segredo após concluir. Não copie o override local `FLEET_OWNER_ID` para produção.
 

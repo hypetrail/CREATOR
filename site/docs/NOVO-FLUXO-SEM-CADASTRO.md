@@ -81,22 +81,22 @@ A rotina programada do Worker processa os avisos a cada cinco minutos, após pub
 
 ## Publicar pelo painel Cloudflare
 
-Use a mesma conta que contém o banco D1 já informado pelo proprietário:
+Use a mesma conta que contém o novo banco D1 informado pelo proprietário. Consulte o [roteiro atualizado](COLOCAR-NO-AR-DO-ZERO.md):
 
 - Banco esperado: `calori-go-db`.
-- Database ID configurado: `87762edb-d9b6-4dd7-bb72-9c3cc58329e4`.
+- Database ID novo: `72584dd8-cc93-41f6-8495-b396a45a4d83`.
 - Repositório: `hypetrail/CREATOR`.
-- Branch: `entrega/site-whatsapp-2026-11-01`.
-- Diretório raiz: `site`.
+- Branch: `main`.
+- Diretório raiz: `/` (raiz do repositório).
 - Build: `npm run build:cloudflare`.
 - Publicação: `npm run deploy:cloudflare`.
-- Node.js: `24`.
+- Node.js: `24`, escolhido por `.node-version`.
 
 A publicação deve aplicar também a migração `0011_minimal_reservation_contacts.sql`, preservando os registros anteriores. Não importe um banco de testes na operação real.
 
 O login do administrador continua sendo criado com o segredo provisório `ADMIN_SETUP_KEY`, de pelo menos 32 caracteres, cadastrado no painel do Worker. Abra `/admin`, crie a senha e remova a chave provisória após concluir. O fluxo novo de reserva não exige cadastrar uma nova `CUSTOMER_DATA_KEY`.
 
-Se a variável de build `CALORI_D1_DATABASE_ID` já estiver configurada, ela precisa apontar para o mesmo banco ou ser removida para usar o ID salvo no projeto. Nenhum deploy na conta Cloudflare e nenhum envio real de WhatsApp devem ser presumidos pelos testes locais.
+A instalação nova não exige variáveis de build. Se reutilizar configurações antigas, remova qualquer override `CALORI_D1_DATABASE_ID` que aponte para o banco anterior. Nenhum deploy na conta Cloudflare e nenhum envio real de WhatsApp devem ser presumidos pelos testes locais.
 
 ## Conferência antes de abrir a operação
 

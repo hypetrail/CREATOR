@@ -5,11 +5,12 @@
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {"binding": "ASSETS"},
+  "keep_vars": true,
   "vars": {"CALORI_AUTH_MODE": "password"},
   "d1_databases": [{
     "binding": "DB",
     "database_name": "calori-go-db",
-    "database_id": "87762edb-d9b6-4dd7-bb72-9c3cc58329e4",
+    "database_id": "72584dd8-cc93-41f6-8495-b396a45a4d83",
     "migrations_dir": "drizzle"
   }],
   "triggers": {"crons": ["*/5 * * * *"]}
