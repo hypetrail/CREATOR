@@ -1,0 +1,55 @@
+.go-public .go-intake,.go-public .go-receipt{min-width:0;border:1px solid var(--go-line,#dfe6e1);border-radius:22px;padding:26px;background:#fff}
+.go-intake .go-intake-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}
+.go-intake .go-intake-heading h2{font-size:clamp(21px,2vw,26px);margin:0 0 6px;color:#063d35;line-height:1.2}
+.go-intake .go-intake-heading p{margin:0;font-size:14px;color:#56655b;line-height:1.5}
+.go-intake .go-contact-icon,.go-receipt .go-receipt-check{display:grid;place-items:center;flex:none;width:42px;height:42px;border-radius:14px;background:#eaf5ee;color:#167443}
+.go-intake .go-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0}
+.go-intake .go-field-grid label{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:14px;font-weight:600}
+.go-intake .go-optional{display:contents;font-weight:400;color:#56655b}
+.go-intake input:not([type=checkbox]){width:100%;min-height:48px;font-size:16px!important;line-height:1.4}
+.go-intake input::placeholder{color:#66786d;font-weight:400}
+.go-intake .go-terms,.go-receipt .go-terms{border:1px solid #dfe6e1;background:#f6f8f6;border-radius:12px;padding:0 16px;margin:18px 0;font-size:14px;overflow-wrap:anywhere}
+.go-intake .go-terms summary,.go-receipt .go-terms summary{padding:14px 0;min-height:48px;font-size:14px;line-height:1.5;font-weight:650;color:#063d35;cursor:pointer}
+.go-intake .go-terms section,.go-receipt .go-terms section{border-top:1px solid #dfe6e1;padding:16px 0;font-size:14px;line-height:1.65}
+.go-intake .go-terms section p,.go-receipt .go-terms section p{margin:8px 0 0;color:#43564b;white-space:pre-line}
+.go-intake .go-consents{display:grid;gap:14px;margin:20px 0}
+.go-intake .go-check{display:flex;align-items:flex-start;gap:12px;padding:4px 0;margin:0!important;cursor:pointer;min-height:44px}
+.go-intake .go-check input{flex:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:3px 0 0;accent-color:#167443}
+.go-intake .go-check strong{display:block;font-size:14px;font-weight:650;color:#173e31;line-height:1.5}
+.go-intake .go-check small{display:block;font-size:13px;color:#56655b;line-height:1.6;margin-top:3px}
+.go-intake .go-confirm-total{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-top:1px solid #dfe6e1;padding-top:18px;margin:20px 0 14px;color:#56655b;font-size:13px}
+.go-intake .go-confirm-total>span:first-child{display:grid;gap:3px}
+.go-intake .go-confirm-total strong{color:#063d35;font-size:28px;letter-spacing:-.04em;line-height:1.2;font-variant-numeric:tabular-nums}
+.go-intake .go-confirm-total>span:last-child{display:flex;align-items:center;gap:6px}
+.go-intake>.go-button{display:flex;width:100%;min-height:50px;gap:10px;font-size:15px!important;font-weight:700}
+.go-intake .go-checkout-footnote{color:#56655b;font-size:12px;line-height:1.6;margin:12px 0 0;text-align:center}
+.go-intake .go-error:focus,.go-receipt .go-error:focus{outline:2px solid #8e2519;outline-offset:4px}
+.go-receipt .go-receipt-check{margin-bottom:16px}
+.go-receipt h2{font-size:clamp(23px,3vw,32px);line-height:1.2;margin:12px 0 16px;color:#063d35}
+.go-receipt .go-pickup-pending{font-size:15px;color:#43564b;line-height:1.65}
+.go-receipt .go-pickup-pending strong{color:#063d35;display:block}
+.go-receipt .go-code{background:#eaf5ee;border:1px solid #d8e9df;border-radius:16px;padding:20px;display:grid;justify-items:start;gap:12px;margin:22px 0}
+.go-receipt .go-code>small{font-size:11px;font-weight:600;letter-spacing:.08em;color:#43564b}
+.go-receipt .go-code>strong{font-size:clamp(19px,3vw,27px);line-height:1.3;overflow-wrap:anywhere;max-width:100%;font-variant-numeric:tabular-nums}
+.go-receipt .go-code .go-button,.go-receipt .go-actions .go-button{display:inline-flex;gap:8px;align-items:center}
+.go-receipt .go-specs{font-size:14px;line-height:1.5;display:grid;gap:14px;margin:24px 0}
+.go-receipt .go-specs>div{display:grid;grid-template-columns:1fr 1.3fr;gap:12px}
+.go-receipt .go-specs dt{color:#56655b}
+.go-receipt .go-specs dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.go-receipt .go-delivery-status{display:flex;align-items:flex-start;gap:12px;border:1px solid #ead4a9;background:#fff8eb;padding:17px;border-radius:14px;font-size:14px;line-height:1.6;margin:22px 0}
+.go-receipt .go-delivery-status>svg{flex:none;margin-top:2px;color:#87521b}
+.go-receipt .go-delivery-status strong{display:block;color:#513f22}
+.go-receipt .go-delivery-status p{margin:5px 0 0;color:#635234}
+.go-receipt .go-actions{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}
+.go-receipt .go-fine{font-size:13px;line-height:1.65;color:#56655b}
+@media(max-width:740px){
+ .go-public .go-intake,.go-public .go-receipt{padding:20px;border-radius:18px}
+ .go-intake .go-field-grid{grid-template-columns:1fr;gap:15px;margin:18px 0}
+ .go-intake .go-intake-heading{gap:10px;margin-bottom:16px}
+ .go-intake .go-contact-icon{width:36px;height:36px;border-radius:11px}
+ .go-intake .go-intake-heading h2{font-size:21px}
+ .go-intake .go-intake-heading p{font-size:13px}
+ .go-receipt .go-actions{flex-direction:column}
+ .go-receipt .go-actions .go-button{width:100%;white-space:normal}
+ .go-receipt .go-specs>div{grid-template-columns:1fr;gap:3px}
+}

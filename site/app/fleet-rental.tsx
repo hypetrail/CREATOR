@@ -2,8 +2,11 @@
 
 import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
+import BrandLogo from '../components/brand-logo';
+import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, MapPin, ShieldCheck} from 'lucide-react';
 import {type Insurance} from '../lib/rental';
-import {fleetPeriod, pricingPolicy} from '../lib/fleet-pricing';
+import {fleetCharges, fleetPeriod, pricingPolicy} from '../lib/fleet-pricing';
+import {displayPrice} from '../lib/fleet-display';
 import {fleetApi, formatMoney, formatPeriod, type FleetCatalog, type FleetColor, type FleetModel, type FleetQuote} from '../lib/fleet-client';
 import {officialWhatsApp, pickupAddress} from '../lib/packages';
 import FleetIntake from './fleet-intake';
@@ -12,14 +15,32 @@ import './fleet-rental.css';
 
 const dateDay = (offset: number) => new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date(Date.now() + offset * 86400000));
 interface Selection {model: FleetModel; color: FleetColor}
-function ModelPhoto({model, color}: {model: FleetModel; color?: FleetColor}) {
+function scrollToElement(element: HTMLElement | null) {
+  element?.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start'});
+}
+function ModelPhoto({model, color, priority = false}: {model: FleetModel; color?: FleetColor; priority?: boolean}) {
   const photos = color?.photos.length ? color.photos : model.photos;
   const [index, setIndex] = useState(0);
   const image = photos[index] || photos[0];
-  return <div className="go-gallery"><div className="go-model-photo">{image ? <img src={image} alt={`${model.brand} ${model.name}${color?.photos.length && model.spec.color_selection !== false ? ` · ${color.name}` : ' · imagem ilustrativa do modelo'}`}/> : <div className="go-no-photo"><strong>{model.name}</strong><span>Foto a cadastrar pela loja</span></div>}</div>
-    {image && !color?.photos.length && <small className="go-photo-note">Imagem ilustrativa do modelo · confira a unidade na retirada</small>}
-    {photos.length > 1 && <div className="go-thumbnails">{photos.map((src, item) => <button type="button" key={src} aria-label={`Foto ${item + 1}`} aria-pressed={item === index} onClick={() => setIndex(item)}><img src={src} alt=""/></button>)}</div>}
+  return <div className="go-gallery"><div className="go-model-photo">{image ? <img src={image} width={600} height={450} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined} decoding="async" alt={`${model.brand} ${model.name}${color?.photos.length && model.spec.color_selection !== false ? ` · ${color.name}` : ' · imagem ilustrativa do modelo'}`}/> : <div className="go-no-photo"><strong>{model.name}</strong><span>Foto a cadastrar pela loja</span></div>}</div>
+    {image && !color?.photos.length && <small className="go-photo-note">Imagem ilustrativa · confira a unidade na retirada</small>}
+    {photos.length > 1 && <div className="go-thumbnails">{photos.map((src, item) => <button type="button" key={src} aria-label={`Foto ${item + 1} de ${model.name}`} aria-pressed={item === index} onClick={() => setIndex(item)}><img src={src} alt="" loading="lazy"/></button>)}</div>}
   </div>;
+}
+function TariffOptions({model}: {model: FleetModel}) {
+  if (!model.daily_cents) return <p className="go-fine">Tarifa em preparação pela loja.</p>;
+  const policy = pricingPolicy(model);
+  const ordinaryMinimum = policy.single_day_enabled ? Math.max(2, policy.minimum_days) : policy.minimum_days;
+  let ordinary: ReturnType<typeof fleetCharges>;
+  let one: ReturnType<typeof fleetCharges> | null;
+  try {
+    ordinary = fleetCharges(model, ordinaryMinimum);
+    one = policy.single_day_enabled ? fleetCharges(model, 1) : null;
+  } catch {return <p className="go-fine">Consulte a tarifa com a loja.</p>;}
+  return <div className="go-tariff-options" aria-label={`Tarifas de ${model.name}`}>
+      {one && <div><span>1 diária</span><strong>{formatMoney(one.total_cents)}</strong><small>por 24 horas</small></div>}
+      <div><span>{ordinaryMinimum === 1 ? 'Por diária' : `${ordinaryMinimum} ou mais diárias`}</span><strong>{formatMoney(ordinary.total_cents / ordinary.days)}<small>/dia</small></strong><small>{policy.insurance_included ? 'Proteção incluída' : 'Somente aluguel'}</small></div>
+    </div>;
 }
 
 export default function FleetRental() {
@@ -40,6 +61,7 @@ export default function FleetRental() {
   const searchVersion = useRef(0);
   const quoteVersion = useRef(0);
   const checkout = useRef<HTMLElement>(null);
+  const startInput = useRef<HTMLInputElement>(null);
   const start = `${startDate}T${startTime}:00-03:00`, end = `${endDate}T${endTime}:00-03:00`;
   const settings = catalog?.settings;
   const contact = settings?.whatsapp || officialWhatsApp;
@@ -53,6 +75,10 @@ export default function FleetRental() {
     return () => {current = false;};
   }, []);
 
+  const chooseDates = () => {
+    scrollToElement(document.getElementById('go-period'));
+    startInput.current?.focus({preventScroll: true});
+  };
   const changePeriod = (setter: (value: string) => void, value: string) => {
     searchVersion.current++; quoteVersion.current++;
     setter(value); setSearched(false); setSelection(null); setQuote(null); setReserved(false); setError('');
@@ -66,7 +92,7 @@ export default function FleetRental() {
       const result = await fleetApi<FleetCatalog>(`availability?${new URLSearchParams({start, end})}`);
       if (version !== searchVersion.current) return;
       setCatalog(result); setSearched(true); setSelection(null); setQuote(null); setReserved(false);
-      document.getElementById('go-fleet')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      scrollToElement(document.getElementById('go-fleet'));
     } catch (cause) {if (version === searchVersion.current) setError((cause as Error).message);}
     finally {setBusy(false);}
   };
@@ -78,7 +104,7 @@ export default function FleetRental() {
       const result = await fleetApi<FleetQuote>('quote', {model_id: model.id, color: color.id, start, end, insurance: 'none'});
       if (version !== quoteVersion.current) return;
       setSelection({model, color}); setInsurance(result.insurance); setQuote(result); setReserved(false);
-      requestAnimationFrame(() => checkout.current?.scrollIntoView({behavior: 'smooth'}));
+      requestAnimationFrame(() => scrollToElement(checkout.current));
     } catch (cause) {setError((cause as Error).message);}
     finally {setBusy(false);}
   };
@@ -101,45 +127,63 @@ export default function FleetRental() {
       .catch(() => { /* The receipt stays valid if refreshing the catalog fails. */ });
   };
 
-  const models = catalog?.models.filter(model => model.active && `${model.brand} ${model.name}`.toLowerCase().includes(query.toLowerCase())) || [];
+  const activeModels = catalog?.models.filter(model => model.active) || [];
+  const models = activeModels.filter(model => `${model.brand} ${model.name}`.toLowerCase().includes(query.toLowerCase()));
+  const featured = activeModels[0];
+  const step = reserved ? 4 : selection ? 3 : searched ? 2 : 1;
   return <div className="go-public">
     <a className="go-skip" href="#go-content">Ir para o conteúdo</a>
-    <header className="go-header"><Link href="/" className="go-brand" aria-label="Calori Go, início"><span className="go-brand-mark" role="img" aria-label="Calori Go — Mobilidade Elétrica"><span className="go-brand-go" aria-hidden="true">Go</span></span></Link><nav aria-label="Navegação principal"><a href="#go-fleet">Nossas motos</a><a href="#go-how">Como alugar</a><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Fale com a loja ↗</a></nav></header>
+    <header className="go-header">
+      <Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link>
+      <nav aria-label="Navegação principal"><a href="#go-fleet">Nossas motos</a><a href="#go-how">Como alugar</a><a className="go-contact-link" href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Fale com a loja <ArrowUpRight aria-hidden="true" size={16}/></a></nav>
+    </header>
     <main id="go-content">
-      <section className="go-hero go-wrap"><span className="go-eyebrow">SEU CAMINHO, AGORA ELÉTRICO</span><h1>Alugue uma<br/>moto elétrica.<br/><span className="go-hero-tagline">Escolha. Converse. Ande.</span></h1><p>Encontre sua elétrica, escolha o período e reserve.<br/>Você paga só na retirada, na Calori Go.</p><a className="go-button go-primary" href="#go-period">Escolher meu período ↗</a><div className="go-hero-notes"><span>Diárias de 24 horas</span><span>Períodos e tarifas por modelo</span><span>Pagamento na loja</span></div></section>
-      <section className="go-wrap" id="go-period" aria-label="Período da locação"><form className="go-period" onSubmit={search}>
-        <fieldset><legend>Retirada</legend><div><label><span>Data</span><input type="date" required min={dateDay(0)} value={startDate} onChange={event => changePeriod(setStartDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={startTime} onChange={event => changePeriod(setStartTime, event.target.value)}/></label></div></fieldset>
-        <fieldset><legend>Devolução</legend><div><label><span>Data</span><input type="date" required min={startDate} value={endDate} onChange={event => changePeriod(setEndDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={endTime} onChange={event => changePeriod(setEndTime, event.target.value)}/></label></div></fieldset>
-        <button className="go-button go-primary" disabled={busy || !catalog}>{busy ? 'Consultando…' : 'Consultar disponibilidade ↗'}</button>
-        <p>{periodError || `${days} diárias · horários de Brasília`}</p>
-      </form></section>
+      <section className="go-hero go-wrap">
+        <div className="go-hero-copy"><span className="go-eyebrow">MOBILIDADE ELÉTRICA, DO SEU JEITO</span><h1>Alugue uma elétrica.<span>O caminho é seu.</span></h1><p>Escolha suas datas e reserve sua moto.<br/>{' '}O pagamento é só na retirada, na loja.</p><button className="go-button go-primary" type="button" onClick={chooseDates}>Escolher datas <ArrowRight aria-hidden="true" size={18}/></button><div className="go-hero-notes"><span><Clock3 aria-hidden="true" size={16}/> Diárias de 24 horas</span><span><MapPin aria-hidden="true" size={16}/> Retirada na loja</span></div></div>
+        {featured ? <div className="go-hero-feature"><div className="go-feature-heading"><span className="go-eyebrow">CONHEÇA SUA PRÓXIMA ELÉTRICA</span><strong>{featured.name}</strong></div><ModelPhoto model={featured} priority/><TariffOptions model={featured}/></div> : <div className="go-hero-placeholder"><CalendarDays size={44} aria-hidden="true"/><h2>Seu próximo caminho começa com uma escolha.</h2><p>{catalog ? 'Converse com a loja para conhecer as opções de locação.' : 'Carregando os modelos e as tarifas da loja…'}</p></div>}
+      </section>
+      <section className="go-wrap go-booking-section" id="go-period" aria-label="Período da locação">
+        <div className="go-booking-heading"><div><span className="go-eyebrow">VAMOS PLANEJAR SEU PASSEIO</span><h2>Quando você quer alugar?</h2></div><span className="go-timezone"><Clock3 size={15} aria-hidden="true"/> Horários de Brasília</span></div>
+        <form className="go-period" onSubmit={search}>
+          <fieldset><legend><CalendarDays size={17} aria-hidden="true"/> Retirada</legend><div><label><span>Data</span><input ref={startInput} type="date" required min={dateDay(0)} value={startDate} onChange={event => changePeriod(setStartDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={startTime} onChange={event => changePeriod(setStartTime, event.target.value)}/></label></div></fieldset>
+          <fieldset><legend><CalendarDays size={17} aria-hidden="true"/> Devolução</legend><div><label><span>Data</span><input type="date" required min={startDate} value={endDate} onChange={event => changePeriod(setEndDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={endTime} onChange={event => changePeriod(setEndTime, event.target.value)}/></label></div></fieldset>
+          <button className="go-button go-primary" disabled={busy || !catalog}>{busy ? 'Consultando…' : <>Ver disponibilidade <ArrowRight size={17} aria-hidden="true"/></>}</button>
+          <p aria-live="polite">{periodError || `${days} ${days === 1 ? 'diária' : 'diárias'} de 24 horas · você paga na loja`}</p>
+        </form>
+        <ol className="go-progress" aria-label="Etapas da reserva">{[{label:'Período',enabled:true},{label:'Moto',enabled:searched},{label:reserved?'Confirmada':'Contato e confirmação',enabled:!!selection}].map((item,index)=><li key={index} className={step > index + 1 ? 'is-complete' : step === index + 1 ? 'is-current' : ''}><button type="button" disabled={!item.enabled} onClick={() => {if (index === 0) chooseDates(); else scrollToElement(document.getElementById(index === 1 ? 'go-fleet' : 'go-checkout'));}} aria-current={step === index + 1 || (reserved && index === 2) ? 'step' : undefined}><span>{step > index + 1 ? <Check size={15} aria-hidden="true"/> : index + 1}</span>{item.label}</button></li>)}</ol>
+      </section>
       <div className="go-wrap">{error && <div role="alert" className="go-error">{error}</div>}</div>
-      <section className="go-wrap go-fleet" id="go-fleet"><div className="go-section-heading"><div><span className="go-eyebrow">UMA ELÉTRICA PARA VOCÊ</span><h2>{searched ? 'Sua moto, no seu período.' : 'Conheça nossa frota.'}</h2><p>{searched ? 'Disponibilidade consultada no calendário. A unidade é separada ao confirmar a reserva.' : 'Escolha as datas para consultar as motos disponíveis.'}</p></div><label className="go-search"><span>Buscar modelo</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome ou marca"/></label></div>
+      <section className="go-wrap go-fleet" id="go-fleet">
+        <div className="go-section-heading"><div><span className="go-eyebrow">SUA PRÓXIMA COMPANHIA DE CAMINHO</span><h2>{searched ? 'Sua moto, no seu período.' : activeModels.length === 1 ? 'Conheça a nossa '+activeModels[0].name+'.' : 'Conheça nossa frota.'}</h2><p>{searched ? `${formatPeriod(Date.parse(start))} a ${formatPeriod(Date.parse(end))}. A unidade é separada ao confirmar.` : 'Veja as tarifas e consulte as datas para escolher sua moto.'}</p></div>{activeModels.length > 1 && <label className="go-search"><span>Buscar modelo</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome ou marca"/></label>}{searched && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar datas</button>}</div>
         {!catalog && !error && <p role="status">Carregando as motos…</p>}
-        {settings && !settings.rentals_enabled && <div className="go-notice"><strong>Reservas ainda não liberadas.</strong><span>Conheça a frota e converse com a loja para combinar sua locação.</span></div>}
+        {settings && !settings.rentals_enabled && <div className="go-notice"><strong>Reservas ainda não liberadas.</strong><span>Conheça a frota e converse com a loja para combinar sua locação.</span><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={15} aria-hidden="true"/></a></div>}
         {catalog && !models.length && <div className="go-empty"><h3>Nenhum modelo encontrado.</h3><p>{query ? 'Tente outro nome ou marca.' : 'A loja está preparando os modelos para locação. Fale com nossa equipe.'}</p></div>}
-        <div className="go-fleet-grid">{models.map(model => {
+        <div className={'go-fleet-grid'+(activeModels.length === 1 ? ' go-fleet-grid-single' : '')}>{models.map(model => {
           const pricing = pricingPolicy(model);
-          const customerDaily = (model.daily_cents || 0) + (pricing.insurance_included ? pricing.insurance_daily_cents : 0);
+          const price = searched ? displayPrice(model, start, end) : null;
           const color = model.colors.find(item => item.id === activeColors[model.id]) || model.colors[0];
           const amount = searched ? color?.available || 0 : undefined;
-          const canChoose = searched && !!model.daily_cents && !!amount && !!settings?.rentals_enabled;
-          return <article className="go-model" key={model.id}><ModelPhoto key={model.id + (color?.id || '')} model={model} color={color}/><div className="go-model-body"><div className="go-model-heading"><div><span className="go-eyebrow">{model.brand}</span><h3>{model.name}</h3></div><div className="go-price">{model.daily_cents ? <><strong>{formatMoney(customerDaily)}</strong><span>/diária{pricing.insurance_included ? ' com seguro' : ''}</span></> : <span>Diária a definir</span>}</div></div><p>{model.spec.line}</p>
-            {model.daily_cents && <p className="go-tariff">{pricing.insurance_included ? `${formatMoney(model.daily_cents)} de aluguel + ${formatMoney(pricing.insurance_daily_cents)} de seguro incluído. ` : ''}Tarifa para {pricing.minimum_days} ou mais {pricing.minimum_days === 1 ? 'diária' : 'diárias'}.{pricing.single_day_enabled && pricing.single_day_rental_cents ? ` Uma diária: ${formatMoney(pricing.single_day_rental_cents + (pricing.insurance_included ? pricing.insurance_daily_cents : 0))}.` : ''}</p>}
-            <dl className="go-model-specs"><div><dt>Autonomia estimada</dt><dd>{model.spec.range ? `Até ${model.spec.range} km` : 'A confirmar'}</dd></div><div><dt>Motor</dt><dd>{model.spec.power ? `${model.spec.power.toLocaleString('pt-BR')} W` : 'A confirmar'}</dd></div><div><dt>{model.spec.capacity_exclusive ? 'Limite operacional' : 'Carga máxima'}</dt><dd>{model.spec.capacity ? `${model.spec.capacity_exclusive ? 'Abaixo de ' : ''}${model.spec.capacity} kg` : 'A confirmar'}</dd></div></dl>
-            {model.spec.color_selection !== false && <fieldset className="go-colors"><legend>Cor{color ? ` · ${color.name}` : ''}</legend>{model.colors.map(item => <button key={item.id} type="button" aria-pressed={color?.id === item.id} title={item.name} aria-label={`${model.name}, ${item.name}${searched ? `, ${item.available || 0} disponíveis no período` : ''}`} onClick={() => setActiveColors(previous => ({...previous, [model.id]: item.id}))} className={searched && !item.available ? 'go-color-unavailable' : ''}><i style={{backgroundColor: item.hex}}/><span>{item.name}</span></button>)}</fieldset>}
-            <p className="go-stock" role="status">{!model.daily_cents ? 'Preço de locação em preparação' : !searched ? `${model.quantity} ${model.quantity === 1 ? 'unidade cadastrada' : 'unidades cadastradas'} · consulte seu período` : amount ? `${amount} ${amount === 1 ? 'unidade disponível' : 'unidades disponíveis'}${model.spec.color_selection !== false ? ' nesta cor' : ''}` : model.spec.color_selection === false ? 'Modelo indisponível no período' : 'Esta cor não está disponível no período'}</p>
-            <button className="go-button go-primary" disabled={busy || !canChoose} onClick={() => color && choose(model, color)}>{canChoose ? model.spec.color_selection===false?'Reservar T1 ↗':'Reservar esta cor ↗' : !model.daily_cents ? 'Tarifa em preparação' : !searched ? 'Consulte seu período acima' : 'Indisponível para reserva'}</button>
-            <details className="go-details"><summary>Ficha técnica e cuidados</summary><dl className="go-specs">{[['Bateria', model.spec.battery], ['Recarga', model.spec.charge], ['Freios', model.spec.brakes], ['Velocidade informada no manual', model.spec.speed ? `${model.spec.speed} km/h` : 'A confirmar']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'A confirmar'}</dd></div>)}</dl><ul>{model.spec.notes?.map(note => <li key={note}>{note}</li>)}</ul><p className="go-fine">Autonomia varia com peso, relevo e uso. A loja confere documentação e elegibilidade antes da retirada. Fonte: {model.spec.source || 'Cadastro da loja.'}</p>{model.id === 't1' && <><a href="/manuals/t1.pdf" target="_blank" rel="noreferrer">Consultar manual da T1 ↗</a><p><a href="/api/fleet/care-guide" target="_blank" rel="noreferrer">Baixar guia de cuidados da locação ↗</a></p></>}</details>
-          </div></article>;
+          const canChoose = searched && !!price && !!amount && !!settings?.rentals_enabled;
+          return <article className="go-model" key={model.id}>
+            <ModelPhoto key={model.id + (color?.id || '')} model={model} color={color}/>
+            <div className="go-model-body"><div className="go-model-heading"><div><span className="go-eyebrow">{model.brand}</span><h3>{model.name}</h3></div><span className="go-model-badge">100% elétrica</span></div><p className="go-model-description">{model.spec.line}</p>
+              {price ? <div className="go-price" aria-live="polite"><div><span>Total para {price.days} {price.days === 1 ? 'diária' : 'diárias'}</span><strong>{formatMoney(price.total_cents)}</strong></div><span>{formatMoney(price.daily_cents)}/dia{price.insurance_included ? ' · proteção incluída' : ' · somente aluguel'}</span></div> : <TariffOptions model={model}/>}
+              {pricing.insurance_included && !!model.daily_cents && <p className="go-inclusion"><ShieldCheck size={16} aria-hidden="true"/> Proteção incluída na tarifa. Confira as condições abaixo.</p>}
+              <dl className="go-model-specs"><div><dt>Autonomia estimada</dt><dd>{model.spec.range ? `Até ${model.spec.range} km` : 'A confirmar'}</dd></div><div><dt>Motor</dt><dd>{model.spec.power ? `${model.spec.power.toLocaleString('pt-BR')} W` : 'A confirmar'}</dd></div><div><dt>{model.spec.capacity_exclusive ? 'Limite operacional' : 'Carga máxima'}</dt><dd>{model.spec.capacity ? `${model.spec.capacity_exclusive ? 'Abaixo de ' : ''}${model.spec.capacity} kg` : 'A confirmar'}</dd></div></dl>
+              {model.spec.color_selection !== false && <fieldset className="go-colors"><legend>Cor{color ? ` · ${color.name}` : ''}</legend>{model.colors.map(item => <button key={item.id} type="button" aria-pressed={color?.id === item.id} title={item.name} aria-label={`${model.name}, ${item.name}${searched ? `, ${item.available || 0} disponíveis no período` : ''}`} onClick={() => setActiveColors(previous => ({...previous, [model.id]: item.id}))} className={searched && !item.available ? 'go-color-unavailable' : ''}><i style={{backgroundColor: item.hex}}/><span>{item.name}</span></button>)}</fieldset>}
+              <p className={'go-stock'+(searched && amount ? ' go-stock-available' : '')} role="status">{searched && !!amount && <CheckCircle2 size={17} aria-hidden="true"/>}{!model.daily_cents ? 'Preço de locação em preparação' : !searched ? 'Consulte as datas para ver a disponibilidade.' : amount ? `${amount} ${amount === 1 ? 'unidade disponível' : 'unidades disponíveis'}${model.spec.color_selection !== false ? ' nesta cor' : ' no período'}` : model.spec.color_selection === false ? 'Modelo indisponível no período' : 'Esta cor não está disponível no período'}</p>
+              {!searched ? <button type="button" className="go-button go-primary" onClick={chooseDates}>Escolher datas <ArrowRight size={17} aria-hidden="true"/></button> : canChoose ? <button className="go-button go-primary" disabled={busy} onClick={() => color && choose(model, color)}>Reservar {model.spec.color_selection === false ? model.name : 'esta cor'} <ArrowRight size={17} aria-hidden="true"/></button> : <><button className="go-button go-primary" disabled>{!model.daily_cents ? 'Tarifa em preparação' : !price ? 'Período não disponível para este modelo' : 'Indisponível para reserva'}</button>{!!settings?.rentals_enabled && <button type="button" className="go-button go-text" onClick={chooseDates}>Consultar outras datas</button>}</>}
+              <details className="go-details"><summary>Ficha técnica e cuidados</summary><dl className="go-specs">{[['Bateria', model.spec.battery], ['Recarga', model.spec.charge], ['Freios', model.spec.brakes], ['Velocidade informada no manual', model.spec.speed ? `${model.spec.speed} km/h` : 'A confirmar']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'A confirmar'}</dd></div>)}</dl><ul>{model.spec.notes?.map(note => <li key={note}>{note}</li>)}</ul><p className="go-fine">Autonomia varia com peso, relevo e uso. A loja confere documentação e elegibilidade antes da retirada. Fonte: {model.spec.source || 'Cadastro da loja.'}</p>{model.id === 't1' && <><a href="/manuals/t1.pdf" target="_blank" rel="noreferrer">Consultar manual da T1 <ArrowUpRight size={15} aria-hidden="true"/></a><p><a href="/api/fleet/care-guide" target="_blank" rel="noreferrer">Baixar guia de cuidados <ArrowUpRight size={15} aria-hidden="true"/></a></p></>}</details>
+            </div>
+          </article>;
         })}</div>
       </section>
-      {selection && quote && <section ref={checkout} className="go-wrap go-checkout" aria-label="Concluir reserva"><div className="go-section-heading"><div><span className="go-eyebrow">{reserved ? 'RESERVA REGISTRADA' : 'SEU PRÓXIMO CAMINHO'}</span><h2>{selection.model.name}{selection.model.spec.color_selection !== false ? ` · ${selection.color.name}` : ''}</h2><p>{formatPeriod(Date.parse(start))} → {formatPeriod(Date.parse(end))}</p></div></div><div className="go-checkout-grid"><div>
-        {!reserved && <fieldset className="go-insurance"><legend>{quote.insurance_included ? 'Seguro incluído na diária' : 'Escolha sua proteção'}</legend>{quote.insurance_included ? <p>O total já inclui {formatMoney(quote.protection_daily_cents)} de seguro por diária. {quote.settings.coverage}</p> : <>{([['none', 'Somente aluguel', 'Sem seguro adicional'], ['basic', 'Seguro básico', '+ R$ 15 por diária'], ['full', 'Seguro completo', '+ R$ 30 por diária']] as const).map(([id, label, description]) => <label key={id}><input type="radio" name="insurance" checked={insurance === id} disabled={busy || (id !== 'none' && !quote.settings.protection_enabled)} onChange={() => changeInsurance(id)}/><span><strong>{label}</strong><small>{description}{id !== 'none' && !quote.settings.protection_enabled ? ' · não disponível' : ''}</small></span></label>)}{insurance !== 'none' && <p>{quote.settings.coverage}</p>}</>}</fieldset>}
+      {selection && quote && <section id="go-checkout" ref={checkout} className="go-wrap go-checkout" aria-label="Concluir reserva"><div className="go-section-heading"><div><span className="go-eyebrow">{reserved ? 'RESERVA REGISTRADA' : 'FALTA POUCO PARA RESERVAR'}</span><h2>{reserved ? 'Seu próximo caminho está reservado.' : 'Confira e confirme sua reserva.'}</h2><p>{formatPeriod(Date.parse(start))} a {formatPeriod(Date.parse(end))}</p></div>{!reserved && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar período</button>}</div><div className="go-checkout-grid"><div>
+        {!reserved && <fieldset className="go-insurance"><legend><ShieldCheck size={18} aria-hidden="true"/>{quote.insurance_included ? 'Proteção incluída na diária' : 'Escolha sua proteção'}</legend>{quote.insurance_included ? <><p>O total já inclui <strong>{formatMoney(quote.protection_daily_cents)} de proteção por diária.</strong></p><details><summary>Ver cobertura, exclusões e responsabilidades</summary><p>{quote.settings.coverage || 'Confirme as condições da proteção com a loja antes de reservar.'}</p></details></> : <>{([['none', 'Somente aluguel', 'Sem seguro adicional'], ['basic', 'Seguro básico', '+ R$ 15 por diária'], ['full', 'Seguro completo', '+ R$ 30 por diária']] as const).map(([id, label, description]) => <label key={id}><input type="radio" name="insurance" checked={insurance === id} disabled={busy || (id !== 'none' && !quote.settings.protection_enabled)} onChange={() => changeInsurance(id)}/><span><strong>{label}</strong><small>{description}{id !== 'none' && !quote.settings.protection_enabled ? ' · não disponível' : ''}</small></span></label>)}{insurance !== 'none' && <details><summary>Ver condições da proteção</summary><p>{quote.settings.coverage}</p></details>}</>}</fieldset>}
         <FleetIntake key={selection.model.id + selection.color.id + start + end} model={selection.model} color={selection.color} start={start} end={end} quote={quote} disabled={busy} onReserved={afterReservation}/>
-      </div><aside className="go-summary"><span className="go-eyebrow">RESUMO</span><ModelPhoto model={selection.model} color={selection.color}/><h3>{selection.model.name}{selection.model.spec.color_selection !== false ? ` · ${selection.color.name}` : ''}</h3><dl><div><dt>{quote.days} diárias × {formatMoney(quote.daily_cents)}</dt><dd>{formatMoney(quote.rental_cents)}</dd></div><div><dt>{quote.insurance_included ? 'Seguro incluído' : insurance === 'none' ? 'Sem seguro adicional' : `Seguro ${insurance === 'basic' ? 'básico' : 'completo'}`}</dt><dd>{formatMoney(quote.protection_cents)}</dd></div><div className="go-total"><dt>Total</dt><dd>{formatMoney(quote.total_cents)}</dd></div></dl><p>Pagamento exclusivamente na loja.</p><p className="go-fine">Retirada após liberação da equipe. {quote.settings.address}</p></aside></div></section>}
-      {!!catalog?.models.length && <div className="go-guide"><RentalGuide models={catalog.models} fleetAnchor="#go-fleet"/></div>}
-      <section className="go-how" id="go-how"><div className="go-wrap"><span className="go-eyebrow">SIMPLES, DO INÍCIO AO CAMINHO</span><h2>Escolha. Reserve. Retire.</h2><div><article><b>01</b><h3>Encontre sua moto</h3><p>Escolha as datas e o modelo disponível.</p></article><article><b>02</b><h3>Registre sua reserva</h3><p>Informe seu WhatsApp, aceite as condições e guarde o código. Acompanhe o atendimento pela conversa com a loja.</p></article><article><b>03</b><h3>Pague na retirada</h3><p>Aguarde a liberação da equipe. A conferência e o pagamento são presenciais.</p></article></div></div></section>
-    </main><footer className="go-footer go-wrap"><div><strong>Calori Go</strong><p>{settings?.address || pickupAddress}</p><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja ↗</a><p><a href="#go-how">Como alugar</a></p></div><a href="/admin">Área da empresa</a></footer>
+      </div><aside className="go-summary"><span className="go-eyebrow">SUA ESCOLHA</span><ModelPhoto model={selection.model} color={selection.color}/><h3>{selection.model.name}{selection.model.spec.color_selection !== false ? ` · ${selection.color.name}` : ''}</h3><dl><div><dt>Aluguel · {quote.days} {quote.days === 1 ? 'diária' : 'diárias'} × {formatMoney(quote.daily_cents)}</dt><dd>{formatMoney(quote.rental_cents)}</dd></div><div><dt>{quote.insurance_included ? 'Proteção incluída' : insurance === 'none' ? 'Sem seguro adicional' : `Seguro ${insurance === 'basic' ? 'básico' : 'completo'}`}</dt><dd>{formatMoney(quote.protection_cents)}</dd></div><div className="go-total"><dt>Total na loja</dt><dd>{formatMoney(quote.total_cents)}</dd></div></dl><p className="go-summary-payment"><CheckCircle2 size={16} aria-hidden="true"/> Pagamento somente na retirada.</p><details className="go-summary-location"><summary>Local e orientação de retirada</summary><p>Retire após a liberação da equipe. {quote.settings.address}</p></details></aside></div></section>}
+      {!!activeModels.length && <div className="go-guide"><RentalGuide models={activeModels} fleetAnchor="#go-fleet"/></div>}
+      <section className="go-how" id="go-how"><div className="go-wrap"><span className="go-eyebrow">SIMPLES, DO INÍCIO AO CAMINHO</span><h2>Escolha. Reserve. Retire.</h2><div><article><b>01</b><h3>Encontre sua moto</h3><p>Escolha as datas e o modelo disponível para seu período.</p></article><article><b>02</b><h3>Confirme sua reserva</h3><p>Informe seu WhatsApp, leia as condições e guarde o código da reserva.</p></article><article><b>03</b><h3>Pague na retirada</h3><p>Aguarde a liberação da equipe. A conferência e o pagamento são na loja.</p></article></div></div></section>
+    </main><footer className="go-footer go-wrap"><div><Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link><p><MapPin size={17} aria-hidden="true"/>{settings?.address || pickupAddress}</p><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={16} aria-hidden="true"/></a></div><nav aria-label="Informações da loja"><a href="#go-how">Como alugar</a><a href="/admin">Área da empresa <ArrowUpRight size={15} aria-hidden="true"/></a></nav></footer>
   </div>;
 }
