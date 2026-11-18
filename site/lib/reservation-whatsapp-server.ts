@@ -15,8 +15,8 @@ function mode(r:Row){try{return JSON.parse(r.terms_snapshot||'{}').contact_mode;
 const isSimple=(r:Row)=>['whatsapp','whatsapp_minimal'].includes(mode(r));
 const prefix=(r:Row,kind:ReservationWhatsAppKind)=>`wa:${kind}:${r.id}:${kind==='ready'?r.ready_ms:kind==='return_reminder'?r.due_ms:0}:`;
 
-function partsFor(r:Row,kind:ReservationWhatsAppKind){
- const parts=reservationWhatsAppParts(r,kind);
+function partsFor(r:Row,kind:ReservationWhatsAppKind,name=''){
+ const parts=reservationWhatsAppParts(r,kind,{},name);
  if(kind==='reservation'&&parts.length){
   try{const url=new URL(environment().WHATSAPP_SITE_URL||environment().APP_PUBLIC_URL||'');if(url.protocol==='https:'&&!url.username&&!url.password&&url.toString().length<=250){const guide=new URL('/api/fleet/care-guide',url).toString();const target=parts[parts.length-1];if(target.text.length+guide.length+20<=900)target.text+=' Guia de cuidados: '+guide;}}catch{/* No invented public URL. */}
  }
@@ -45,7 +45,7 @@ async function queue(r:Row,kind:ReservationWhatsAppKind,pending?:{reason:string;
  if(kind==='return_reminder'&&(r.status!=='rented'||!r.due_ms||r.due_ms<=Date.now()||r.due_ms>Date.now()+7_200_000))return false;
  if(kind==='pending'&&!['reserved','preparing'].includes(r.status))return false;
  if(['returned','cancelled'].includes(r.status))return false;
- const parts=partsFor(r,kind),group=pending?`wa:pending:${r.id}:${pending.key}:`:prefix(r,kind),base=group+contact.revision+':',now=Date.now();
+ const parts=partsFor(r,kind,contact.legacy?'':contact.name),group=pending?`wa:pending:${r.id}:${pending.key}:`:prefix(r,kind),base=group+contact.revision+':',now=Date.now();
  // A correction may replace unsent jobs, but any accepted/uncertain part locks
  // the whole event against re-creation at another recipient or revision.
  const tracked=await stmt('SELECT status,contact_revision FROM reservation_document_deliveries WHERE reservation_id=? AND kind=? AND event_key LIKE ?',[r.id,'whatsapp_'+kind,group+'%']).all<{status:string;contact_revision:string}>();
@@ -72,7 +72,7 @@ export async function reservationWhatsAppNotice(id:string){
  const r=await row(id);if(!r)throw new HttpError(404,'Reserva não encontrada.');
  const contact=await contactFor(r),eligible=!!contact&&await permitted(r,contact);
  const configured=whatsappConfiguration(environment()).templates.rental==='configured';
- return {status:!eligible?'pending_contact':configured?'queued':'not_configured',contact_saved:!!contact,message:!eligible?'Sua reserva está registrada. Confira o contato e a autorização com a loja.':configured?'Contato registrado. As mensagens da reserva estão na fila do WhatsApp.':'Contato registrado. A conexão do WhatsApp ainda não está ativa; guarde o número da reserva e converse com a loja.',parts:partsFor(r,'reservation')};
+ return {status:!eligible?'pending_contact':configured?'queued':'not_configured',contact_saved:!!contact,message:!eligible?'Sua reserva está registrada. Confira o contato e a autorização com a loja.':configured?'Contato registrado. As mensagens da reserva estão na fila do WhatsApp.':'Contato registrado. A conexão do WhatsApp ainda não está ativa; guarde o número da reserva e converse com a loja.',parts:partsFor(r,'reservation',contact&&!contact.legacy?contact.name:'')};
 }
 export async function queueReadyWhatsApp(id:string){const r=await row(id);const queued=!!r&&isSimple(r)?await queue(r,'ready'):false;return {queued,configured:whatsappConfiguration(environment()).templates.rental==='configured'};}
 /** Authenticated owner caller, using a contact whose authorization is stored. */
@@ -114,7 +114,7 @@ export async function processReservationWhatsApp(limit=20,request:typeof fetch=f
     if(!safe){await record('cancelled');totals.cancelled++;continue;}
    }
    if(whatsappConfiguration(environment()).templates.rental!=='configured'){await record('not_configured');totals.not_configured++;continue;}
-   const parts=partsFor(r,kind),part=parts[Number(job.event_key.split(':').at(-1))];
+   const parts=partsFor(r,kind,contact.legacy?'':contact.name),part=parts[Number(job.event_key.split(':').at(-1))];
    if(!part){await record('cancelled');totals.cancelled++;continue;}
    const current=await contactFor(r);
    if(!current||current.revision!==contact.revision||!await permitted(r,current)){await record('cancelled');totals.cancelled++;continue;}

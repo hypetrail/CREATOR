@@ -45,14 +45,15 @@ test('inspection, operations, audit and communication routes are owner-only; pri
 test('public reservations store only authorized contact, share stock with the catalogue and never create or bind an account',async()=>{
  await fixture();
  const input={...await quoteAndRequest(),contact:{phone:'(19) 98888-8888',name:'Cliente de teste'},whatsapp_consent:true};
- for(const invalid of [{...input,contact:undefined},{...input,whatsapp_consent:false},{...input,customer_id:crypto.randomUUID()},{...input,contact:{...input.contact,cpf:'52998224725'}}])assert.equal((await route.POST(req('reservations',invalid))).status,400);
+ for(const invalid of [{...input,contact:undefined},{...input,contact:{phone:input.contact.phone}},{...input,contact:{phone:input.contact.phone,name:'   '}},{...input,whatsapp_consent:false},{...input,customer_id:crypto.randomUUID()},{...input,contact:{...input.contact,cpf:'52998224725'}}])assert.equal((await route.POST(req('reservations',invalid))).status,400);
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,0);
  const before=await fleet.availability(input.start,input.end);assert.equal(before.models.find(m=>m.id==='t1').available,5);
  const response=await route.POST(req('reservations',input,false,'calori_customer=obsolete-session'));assert.equal(response.status,200);const b=await response.json();assert.equal(b.account_linked,false);assert.equal('customer_id'in b,false);assert.equal(b.delivery.status,'not_configured');assert.equal(b.contact_saved,true);assert.match(b.code,/^CG-/);assert.equal(b.payment_status,'pending');assert.equal(b.payment_method,'pickup');assert.equal(b.total_cents,9000);
+ assert.match(JSON.stringify(b.delivery.parts),/Cliente de teste/);assert.match(JSON.stringify(b.delivery.parts),/https:\/\/maps\.app\.goo\.gl\/VaRnDRooZaSWEASj7/);
  const stored=sqlite.prepare('SELECT customer_id,name,phone,email,city FROM reservations WHERE id=?').get(b.id);assert.deepEqual({...stored},{customer_id:'',name:'',phone:'',email:'',city:''});
  const contact=sqlite.prepare('SELECT name,phone,consent_ms,revoked_ms FROM reservation_contacts WHERE reservation_id=?').get(b.id);assert.equal(contact.name,input.contact.name);assert.equal(contact.phone,'5519988888888');assert.ok(contact.consent_ms>0);assert.equal(contact.revoked_ms,null);
  const replay=await route.POST(req('reservations',input));assert.equal(replay.status,200);assert.equal((await replay.json()).id,b.id);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,1);
- assert.equal((await route.POST(req('reservations',{...input,contact:{phone:'19777777777'}}))).status,409);
+ assert.equal((await route.POST(req('reservations',{...input,contact:{phone:'19777777777',name:'Cliente de teste'}}))).status,409);
  const available=await route.GET(req('availability?'+new URLSearchParams({start:input.start,end:input.end})));assert.equal(available.status,200);const catalogue=await available.json();assert.equal(catalogue.models.find(m=>m.id==='t1').available,4);assert.equal(JSON.stringify(catalogue).includes(contact.phone),false);assert.equal(JSON.stringify(catalogue).includes(contact.name),false);
  for(const path of ['register','login','session','reservations']){
   const request=new Request('https://calori.test/api/customer/'+path,{method:path==='register'||path==='login'?'POST':'GET',headers:{Cookie:'calori_customer=obsolete-session','Content-Type':'application/json'},...(path==='register'||path==='login'?{body:JSON.stringify({phone:input.contact.phone,password:'Unused password'})}:{})});
@@ -63,7 +64,7 @@ test('public reservations store only authorized contact, share stock with the ca
 
 test('inspection-gated pickup starts the real clock, queues WhatsApp texts and preserves safety holds on return',async()=>{
  await fixture();
- const contact={phone:'19999999999'},response=await route.POST(req('reservations',{...await quoteAndRequest(),contact,whatsapp_consent:true}));assert.equal(response.status,200);const b=await response.json();
+ const contact={phone:'19999999999',name:'Cliente de teste'},response=await route.POST(req('reservations',{...await quoteAndRequest(),contact,whatsapp_consent:true}));assert.equal(response.status,200);const b=await response.json();
  assert.equal((await route.POST(req('contact',{reservation_id:b.id,delivery_token:'invalid',contact,whatsapp_consent:true}))).status,403);
  assert.equal((await route.POST(req('contact',{reservation_id:b.id,delivery_token:b.delivery_token,contact,whatsapp_consent:true}))).status,200);
  assert.equal((await route.POST(req('admin/reservation',{id:b.id,status:'preparing',payment_status:'pending'},true))).status,200);

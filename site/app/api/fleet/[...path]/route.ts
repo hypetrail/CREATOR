@@ -81,7 +81,8 @@ async function handle(req:Request){
   else if(req.method==='GET'&&path==='availability')result=await fleet.availability(url.searchParams.get('start')||'',url.searchParams.get('end')||'');
   else if(req.method==='POST'&&path==='quote')result=await fleet.quote(input);
   else if(req.method==='POST'&&path==='reservations'){
-   validateMinimalContact(input.contact);
+   const contact=validateMinimalContact(input.contact);
+   if(!contact.name)throw new fleet.HttpError(400,'Informe como podemos chamar você.');
    if(input.whatsapp_consent!==true)throw new fleet.HttpError(400,'Autorize os avisos operacionais desta reserva.');
    if(!await rental.db().prepare('SELECT id FROM reservations WHERE request_key=?').bind(String(input.request_key||'')).first())await limitPublicReservations(req);
    const reserved=await fleet.reserve(input);

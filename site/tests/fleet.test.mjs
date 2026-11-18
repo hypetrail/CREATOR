@@ -157,12 +157,12 @@ test('API protects administration, rejects cross-site mutations and keeps public
  assert.equal((await route.POST(post({padding:'x'.repeat(70_000)}))).status,413);
  assert.equal((await route.POST(post(request()))).status,400);
  assert.equal((await route.POST(post(request({contact:{phone:'123'},whatsapp_consent:true})))).status,400);
- assert.equal((await route.POST(post(request({contact:{phone:'19999999999'},whatsapp_consent:false})))).status,400);
+ assert.equal((await route.POST(post(request({contact:{phone:'19999999999',name:'Cliente teste'},whatsapp_consent:false})))).status,400);
  assert.equal((await route.POST(post(request({contact:{phone:'19999999999',cpf:'52998224725'},whatsapp_consent:true})))).status,400);
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservations').get().n,0);
- const response=await route.POST(post(request({contact:{phone:'(19) 99999-9999'},whatsapp_consent:true})));
+ const response=await route.POST(post(request({contact:{phone:'(19) 99999-9999',name:'Cliente teste'},whatsapp_consent:true})));
  assert.equal(response.status,200);assert.equal((await response.json()).contact_saved,true);
- const contact=sqlite.prepare('SELECT * FROM reservation_contacts').get();assert.equal(contact.phone,'5519999999999');assert.equal(contact.name,'');
+ const contact=sqlite.prepare('SELECT * FROM reservation_contacts').get();assert.equal(contact.phone,'5519999999999');assert.equal(contact.name,'Cliente teste');
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM customers').get().n,0);
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_customer_data').get().n,0);
 });
@@ -462,7 +462,7 @@ test('Cloudflare reservations work without customer encryption or customer accou
  await fixture({enabled:false});const savedKey=environment.CUSTOMER_DATA_KEY;t.after(()=>{delete environment.CALORI_AUTH_MODE;if(savedKey===undefined)delete environment.CUSTOMER_DATA_KEY;else environment.CUSTOMER_DATA_KEY=savedKey;});environment.CALORI_AUTH_MODE='password';delete environment.CUSTOMER_DATA_KEY;
  const input={address:'Endereço do teste',whatsapp:'19999999999',coverage:'Condições de teste',protection_enabled:false,protection_daily_cents:1500,rentals_enabled:true};assert.equal((await fleet.saveSettings(input)).rentals_enabled,true);
  const q=await fleet.quote({model_id:'t1',start,end,insurance:'none'});
- const response=await route.POST(deliveryRequest('reservations',request({expected_daily_cents:q.daily_cents,expected_total_cents:q.total_cents,expected_terms_token:q.terms_token,contact:{phone:'19999999999'},whatsapp_consent:true})));
+ const response=await route.POST(deliveryRequest('reservations',request({expected_daily_cents:q.daily_cents,expected_total_cents:q.total_cents,expected_terms_token:q.terms_token,contact:{phone:'19999999999',name:'Cliente teste'},whatsapp_consent:true})));
  assert.equal(response.status,200);const b=await response.json();assert.equal(b.total_cents,9000);assert.equal(b.account_linked,false);assert.equal(b.payment_method,'pickup');assert.equal(b.payment_status,'pending');
  const snapshot=JSON.parse(b.terms_snapshot);assert.equal(snapshot.contact_mode,'whatsapp_minimal');assert.equal(snapshot.delay_daily_cents,4500);
  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reservation_contacts').get().n,1);

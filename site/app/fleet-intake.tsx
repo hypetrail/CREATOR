@@ -1,13 +1,14 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {ArrowUpRight, Check, Copy, MessageCircle, ShieldCheck} from 'lucide-react';
+import {ArrowUpRight, Check, Copy, MessageCircle} from 'lucide-react';
 import './fleet-checkout.css';
 import {phone as normalizePhone} from '../lib/rental';
 import {fleetApi, formatMoney, formatPeriod, type FleetBooking, type FleetColor, type FleetModel, type FleetQuote} from '../lib/fleet-client';
 import {documentSections} from '../lib/document-policy';
 import {reservationWhatsAppParts, type WhatsAppPart} from '../lib/reservation-whatsapp';
 import {reservationLabels, type ReservationState} from '../lib/reservation-workflow';
+import {storeMapsUrl} from '../lib/store-location';
 import {officialWhatsApp} from '../lib/packages';
 
 interface Props {
@@ -46,7 +47,7 @@ export default function FleetIntake({model, color, start, end, quote, onReserved
   const contact = () => {
     const normalized = normalizePhone(phone);
     const shortName = name.trim();
-    if (shortName.length > 100 || /[\x00-\x1f\x7f]/.test(shortName)) throw new Error('Confira o nome informado.');
+    if (!shortName || shortName.length > 100 || /[\x00-\x1f\x7f]/.test(shortName)) throw new Error('Confira o nome informado.');
     return {phone: normalized, ...(shortName ? {name: shortName} : {})};
   };
   const saveContact = async (result: MinimalBooking) => {
@@ -94,7 +95,7 @@ export default function FleetIntake({model, color, start, end, quote, onReserved
     const displayName = model.name + (model.spec.color_selection !== false ? ` · ${color.name}` : '');
     const parts = delivery?.parts || reservationWhatsAppParts(booking as Parameters<typeof reservationWhatsAppParts>[0], 'reservation');
     const contactSaved = delivery?.contact_saved === true || booking.contact_saved === true || !!delivery && ['queued', 'submitted', 'sent', 'already_sent', 'not_configured'].includes(delivery.status);
-    const summary = `Olá, Calori Go! Quero falar sobre a reserva ${booking.code}. Modelo: ${model.name}. Retirada prevista: ${formatPeriod(booking.start_ms)}. Devolução prevista: ${formatPeriod(booking.end_ms)}. Total: ${formatMoney(booking.total_cents)}, com pagamento na loja. Aguardo a liberação para retirada.`;
+    const summary = `Acabei de solicitar uma locação.\nNome: ${name.trim()}.\nModelo: ${model.name}.\nReserva: ${booking.code}.\nRetirada prevista: ${formatPeriod(booking.start_ms)}.\nDevolução prevista: ${formatPeriod(booking.end_ms)}.\nTotal: ${formatMoney(booking.total_cents)}.\nLocalização da loja: ${storeMapsUrl}\nAguardo o aviso da equipe de que a moto está pronta para retirada.`;
     const deliveryMessage = delivery?.status === 'not_configured'
       ? 'Seu contato foi registrado. O envio automático ainda não está disponível. Guarde seu número de reserva e fale com a loja pelo botão abaixo.'
       : delivery?.status === 'queued'
@@ -124,7 +125,7 @@ export default function FleetIntake({model, color, start, end, quote, onReserved
         <p className="go-fine">Seu número de reserva permanece o mesmo. Esta ação apenas confere o contato e os avisos autorizados.</p>
         <button className="go-button go-secondary" disabled={busy}>{busy ? 'Conferindo contato…' : 'Concluir contato da reserva'}</button>
       </form>}
-      <div className="go-actions"><a className="go-button go-primary" href={`https://wa.me/${quote.settings.whatsapp || officialWhatsApp}?text=${encodeURIComponent(summary)}`} target="_blank" rel="noreferrer">Falar com a loja no WhatsApp <ArrowUpRight size={18} aria-hidden="true"/></a></div>
+      <p><a href={storeMapsUrl} target="_blank" rel="noreferrer">Ver localização da loja no Google Maps <ArrowUpRight size={16} aria-hidden="true"/></a></p><div className="go-actions"><a className="go-button go-primary" href={`https://wa.me/${quote.settings.whatsapp || officialWhatsApp}?text=${encodeURIComponent(summary)}`} target="_blank" rel="noreferrer">Falar com a loja no WhatsApp <ArrowUpRight size={18} aria-hidden="true"/></a></div>
       <details className="go-terms"><summary>Conferir reserva, regras e cuidados</summary>{parts.map((part, index) => <section key={index}><strong>{part.title}</strong><p>{part.text}</p></section>)}</details>
       {model.id === 't1' && <p><a className="go-button go-secondary" href="/api/fleet/care-guide" target="_blank" rel="noreferrer">Consultar guia de cuidados da T1</a></p>}
       <p className="go-fine">A identificação, os documentos e a assinatura serão conferidos na loja. A reserva não comprova pagamento. O prazo efetivo de devolução começa na retirada registrada pela equipe.</p>
@@ -133,19 +134,17 @@ export default function FleetIntake({model, color, start, end, quote, onReserved
   }
 
   return <form className="go-intake" onSubmit={submit} aria-busy={busy}>
-    <div className="go-intake-heading"><span className="go-contact-icon" aria-hidden="true"><MessageCircle size={22}/></span><div><h2>Seu contato para a reserva</h2><p>Sem criar conta. A documentação fica para a retirada.</p></div></div>
+    <div className="go-intake-heading"><span className="go-contact-icon" aria-hidden="true"><MessageCircle size={22}/></span><div><h2>Receba sua reserva no WhatsApp</h2><p>Informe seu número com DDD e seu nome.</p></div></div>
     <div className="go-field-grid">
       <label>WhatsApp com DDD<input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="(19) 99999-9999" required maxLength={30} disabled={busy || disabled} value={phone} onChange={event => setPhone(event.target.value)}/></label>
-      <label>Seu nome <span className="go-optional">(opcional)</span><input name="name" autoComplete="given-name" placeholder="Como podemos chamar você?" maxLength={100} disabled={busy || disabled} value={name} onChange={event => setName(event.target.value)}/></label>
+      <label>Como podemos chamar você?<input name="name" required autoComplete="name" placeholder="Como podemos chamar você?" maxLength={100} disabled={busy || disabled} value={name} onChange={event => setName(event.target.value)}/></label>
     </div>
     {quote.document_policy && <details className="go-terms"><summary>Condições completas da reserva</summary><p className="go-fine">{quote.document_policy.approved ? `Versão ${quote.document_policy.version}` : 'Condições para conferência na loja.'}</p>{documentSections.map(([key, title]) => <section key={key}><strong>{title}</strong><p>{quote.document_policy!.clauses[key]}</p></section>)}</details>}
     <div className="go-consents">
-      <label className="go-check"><input name="consent" type="checkbox" required disabled={busy || disabled} checked={consent} onChange={event => setConsent(event.target.checked)}/><span><strong>Autorizo o contato sobre esta reserva.</strong><small>Permito guardar meu WhatsApp e nome, quando informado, para confirmação, pendências, orientações, aviso de retirada e lembrete de devolução. Sem mensagens de ofertas.</small></span></label>
+      <label className="go-check"><input name="consent" type="checkbox" required disabled={busy || disabled} checked={consent} onChange={event => setConsent(event.target.checked)}/><span><strong>Autorizo o contato sobre esta reserva.</strong><small>Permito guardar meu nome e WhatsApp para confirmação, pendências, orientações, aviso de retirada e lembrete de devolução. Sem mensagens de ofertas.</small></span></label>
       <label className="go-check"><input name="terms" type="checkbox" required disabled={busy || disabled} checked={terms} onChange={event => setTerms(event.target.checked)}/><span><strong>Li as condições e pagarei na loja.</strong><small>Aguardarei a liberação da equipe. A retirada depende de documentação, elegibilidade, vistoria e assinatura. {model.spec.capacity_exclusive && model.spec.capacity ? `Respeitarei o peso total abaixo de ${model.spec.capacity} kg, incluindo condutor, eventual passageiro e bagagem.` : ''}</small></span></label>
     </div>
     {error && <p ref={errorMessage} tabIndex={-1} className="go-error" role="alert">{error}</p>}
-    <div className="go-confirm-total"><span>Total da reserva<strong>{formatMoney(quote.total_cents)}</strong></span><span><ShieldCheck size={17} aria-hidden="true"/>Pagamento na loja</span></div>
-    <button className="go-button go-primary" disabled={busy || disabled}>{busy ? 'Registrando sua reserva…' : 'Confirmar reserva'}{!busy && <ArrowUpRight size={18} aria-hidden="true"/>}</button>
-    <p className="go-checkout-footnote">Ao confirmar, guarde o número da reserva. Aguarde o aviso da loja antes de retirar a moto.</p>
+    <button className="go-button go-primary" disabled={busy || disabled}>{busy ? 'Registrando sua reserva…' : 'Confirmar a reserva'}{!busy && <ArrowUpRight size={18} aria-hidden="true"/>}</button>
   </form>;
 }
