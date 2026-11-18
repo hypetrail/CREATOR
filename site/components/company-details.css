@@ -1,0 +1,11 @@
+.go-footer .go-company{display:flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:480px;margin-top:12px;font-style:normal;font-size:12px;line-height:1.6;text-align:left;color:#586a62}
+.go-footer .go-company>strong{font-size:13px;letter-spacing:.045em;color:#063d35}
+.go-footer .go-company>a{display:flex;align-items:center;gap:10px;min-height:44px;max-width:100%;font-size:12px;text-decoration:none;overflow-wrap:anywhere}
+.go-footer .go-company>a:hover{text-decoration:underline;text-underline-offset:3px}
+.go-footer .go-company>a svg{flex:0 0 20px;color:#167443}
+.go-footer .go-company .go-company-whatsapp{font-weight:650;color:#146d40;margin-top:4px}
+.go-footer .go-company .go-company-map{align-items:flex-start;padding:6px 0}
+.go-company-map small{display:block;font-size:11px;color:#146d40;margin-top:3px}
+.go-public .go-footer{justify-content:flex-start;gap:56px}
+.go-public .go-footer nav{font-size:12px;align-items:flex-start;text-align:left}
+@media(max-width:740px){.go-public .go-footer{gap:20px}.go-footer .go-company{font-size:11.5px}.go-footer .go-company>a{font-size:12px}.go-public .go-footer nav{font-size:12px}}

@@ -1,2 +1,3 @@
+import {company} from './company';
 /** Localização informada pela loja. */
-export const storeMapsUrl = 'https://maps.app.goo.gl/VaRnDRooZaSWEASj7';
+export const storeMapsUrl = company.mapsUrl;

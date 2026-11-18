@@ -6,12 +6,13 @@ import {weekendPromotionText} from '../lib/weekend-pricing';
 import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
 import BrandLogo from '../components/brand-logo';
-import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, MapPin, ShieldCheck} from 'lucide-react';
+import CompanyDetails from '../components/company-details';
+import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, ShieldCheck} from 'lucide-react';
 import {type Insurance} from '../lib/rental';
 import {fleetCharges, fleetPeriod, pricingPolicy} from '../lib/fleet-pricing';
 import {displayPrice} from '../lib/fleet-display';
 import {fleetApi, formatMoney, formatPeriod, type FleetCatalog, type FleetColor, type FleetModel, type FleetQuote} from '../lib/fleet-client';
-import {officialWhatsApp, pickupAddress} from '../lib/packages';
+import {officialWhatsApp} from '../lib/packages';
 import FleetIntake from './fleet-intake';
 import InsuranceDetails from './insurance-details';
 import './fleet-rental.css';
@@ -195,6 +196,6 @@ export default function FleetRental() {
           <dl><div className="go-total"><dt>Total</dt><dd>{formatMoney(quote.total_cents)}</dd></div></dl>
         </aside>}</div>
       </section>}
-    </main><footer className="go-footer go-wrap"><div><Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link><p><MapPin size={17} aria-hidden="true"/>{settings?.address || pickupAddress}</p><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={16} aria-hidden="true"/></a></div><nav aria-label="Informações da loja"><a href="#go-fleet">Nossos modelos</a><details className="go-footer-help"><summary>Como alugar</summary><p>Escolha o modelo e as datas, confira o total e informe seu contato. Aguarde a liberação da equipe para retirar e pagar na loja.</p></details><a href="/admin">Área da empresa <ArrowUpRight size={15} aria-hidden="true"/></a></nav></footer>
+    </main><footer className="go-footer go-wrap"><div><Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link><CompanyDetails phone={contact} address={settings?.address || undefined}/></div><nav aria-label="Informações da loja"><a href="#go-fleet">Nossos modelos</a><details className="go-footer-help"><summary>Como alugar</summary><p>Escolha o modelo e as datas, confira o total e informe seu contato. Aguarde a liberação da equipe para retirar e pagar na loja.</p></details><a href="/admin">Área da empresa <ArrowUpRight size={15} aria-hidden="true"/></a></nav></footer>
   </div>;
 }

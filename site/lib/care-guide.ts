@@ -1,3 +1,4 @@
+import {company} from './company';
 export interface CareGuideSection {title:string;text:string}
 export interface CareGuide {
  version:string;model_id:string;title:string;contact:string;
@@ -10,8 +11,8 @@ export interface CareGuide {
  * research or legal classification has been represented as verified.
  */
 export const defaultCareGuide:CareGuide={
- version:'cuidados-t1-2026-10-29',model_id:'t1',title:'Cuidados básicos com a moto elétrica T1',
- contact:'CaloriMob / Calori Go · WhatsApp: (19) 97150-5878',
+ version:'cuidados-t1-2026-11-18',model_id:'t1',title:'Cuidados básicos com a moto elétrica T1',
+ contact:`${company.tradeName} · WhatsApp: ${company.whatsappLabel}`,
  sections:[
   {title:'Antes de retirar',text:'Confira a documentação, a elegibilidade para conduzir a unidade, o contrato e a vistoria de saída com a equipe. Peça uma demonstração dos comandos, freios, painel e carregamento. O acompanhamento e a assinatura dos pais não substituem habilitação ou outros requisitos legais. A liberação da unidade depende dessas conferências.'},
   {title:'Peso total e passageiro',text:'Na locação da T1, a soma do peso do condutor, eventual passageiro e carga deve ficar abaixo de 120 kg. Evite aproximar-se desse limite. Passageiro somente quando a documentação, a configuração e o uso da unidade forem autorizados pela empresa; a existência de banco traseiro não confirma a lotação. Essa é a regra operacional mais restritiva adotada pela CaloriMob; o manual original informa 150 kg.'},
