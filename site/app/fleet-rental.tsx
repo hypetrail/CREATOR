@@ -144,7 +144,7 @@ export default function FleetRental() {
 
     </header>
     <main id="go-content">
-      <section className="go-intro go-wrap"><h1>Alugue uma experiência do futuro.</h1><p>Reserve sua moto logo abaixo.</p></section>
+      <section className="go-intro go-wrap"><h1>Experimente o futuro.</h1></section>
       <div className="go-wrap">{error && <div role="alert" className="go-error">{error}</div>}</div>
       <section className="go-wrap go-fleet" id="go-fleet">
         <div className="go-section-heading"><div><span className="go-eyebrow">SUA PRÓXIMA COMPANHIA DE CAMINHO</span><h2>{searched ? 'Sua moto, no seu período.' : activeModels.length === 1 ? 'Conheça a nossa '+activeModels[0].name+'.' : 'Conheça nossa frota.'}</h2><p>{searched ? `${formatPeriod(Date.parse(start))} a ${formatPeriod(Date.parse(end))}. A unidade é separada ao confirmar.` : 'Veja as tarifas e consulte as datas para escolher sua moto.'}</p></div>{activeModels.length > 1 && <label className="go-search"><span>Buscar modelo</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome ou marca"/></label>}{searched && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar datas</button>}</div>
