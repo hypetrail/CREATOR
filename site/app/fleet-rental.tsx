@@ -3,7 +3,7 @@
 import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
 import BrandLogo from '../components/brand-logo';
-import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, MapPin, ShieldCheck} from 'lucide-react';
+import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, MapPin} from 'lucide-react';
 import {type Insurance} from '../lib/rental';
 import {fleetCharges, fleetPeriod, pricingPolicy} from '../lib/fleet-pricing';
 import {displayPrice} from '../lib/fleet-display';
@@ -11,7 +11,6 @@ import {fleetApi, formatMoney, formatPeriod, type FleetCatalog, type FleetColor,
 import {officialWhatsApp, pickupAddress} from '../lib/packages';
 import FleetIntake from './fleet-intake';
 import InsuranceDetails from './insurance-details';
-import RentalGuide from './rental-guide';
 import './fleet-rental.css';
 
 const dateDay = (offset: number) => new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date(Date.now() + offset * 86400000));
@@ -24,7 +23,6 @@ function ModelPhoto({model, color, priority = false}: {model: FleetModel; color?
   const [index, setIndex] = useState(0);
   const image = photos[index] || photos[0];
   return <div className="go-gallery"><div className="go-model-photo">{image ? <img src={image} width={600} height={450} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined} decoding="async" alt={`${model.brand} ${model.name}${color?.photos.length && model.spec.color_selection !== false ? ` · ${color.name}` : ' · imagem ilustrativa do modelo'}`}/> : <div className="go-no-photo"><strong>{model.name}</strong><span>Foto a cadastrar pela loja</span></div>}</div>
-    {image && !color?.photos.length && <small className="go-photo-note">Imagem ilustrativa · confira a unidade na retirada</small>}
     {photos.length > 1 && <div className="go-thumbnails">{photos.map((src, item) => <button type="button" key={src} aria-label={`Foto ${item + 1} de ${model.name}`} aria-pressed={item === index} onClick={() => setIndex(item)}><img src={src} alt="" loading="lazy"/></button>)}</div>}
   </div>;
 }
@@ -51,6 +49,7 @@ export default function FleetRental() {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('09:00');
   const [searched, setSearched] = useState(false);
+  const [datesOpen, setDatesOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -77,8 +76,11 @@ export default function FleetRental() {
   }, []);
 
   const chooseDates = () => {
-    scrollToElement(document.getElementById('go-period'));
-    startInput.current?.focus({preventScroll: true});
+    setDatesOpen(true);
+    requestAnimationFrame(() => {
+      scrollToElement(document.getElementById('go-period'));
+      startInput.current?.focus({preventScroll: true});
+    });
   };
   const changePeriod = (setter: (value: string) => void, value: string) => {
     searchVersion.current++; quoteVersion.current++;
@@ -130,54 +132,47 @@ export default function FleetRental() {
 
   const activeModels = catalog?.models.filter(model => model.active) || [];
   const models = activeModels.filter(model => `${model.brand} ${model.name}`.toLowerCase().includes(query.toLowerCase()));
-  const featured = activeModels[0];
-  const step = reserved ? 4 : selection ? 3 : searched ? 2 : 1;
-  return <div className="go-public">
+  const step = reserved ? 4 : selection ? 3 : datesOpen ? 2 : 1;
+  return <div className="go-public go-simple">
     <a className="go-skip" href="#go-content">Ir para o conteúdo</a>
     <header className="go-header">
       <Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link>
-      <nav aria-label="Navegação principal"><a href="#go-fleet">Nossas motos</a><a href="#go-how">Como alugar</a><a className="go-contact-link" href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Fale com a loja <ArrowUpRight aria-hidden="true" size={16}/></a></nav>
+
     </header>
     <main id="go-content">
-      <section className="go-hero go-wrap">
-        <div className="go-hero-copy"><span className="go-eyebrow">MOBILIDADE ELÉTRICA, DO SEU JEITO</span><h1>Alugue uma elétrica.<span>O caminho é seu.</span></h1><p>Escolha suas datas e reserve sua moto.<br/>{' '}O pagamento é só na retirada, na loja.</p><button className="go-button go-primary" type="button" onClick={chooseDates}>Escolher datas <ArrowRight aria-hidden="true" size={18}/></button><div className="go-hero-notes"><span><Clock3 aria-hidden="true" size={16}/> Diárias de 24 horas</span><span><MapPin aria-hidden="true" size={16}/> Retirada na loja</span></div></div>
-        {featured ? <div className="go-hero-feature"><div className="go-feature-heading"><span className="go-eyebrow">CONHEÇA SUA PRÓXIMA ELÉTRICA</span><strong>{featured.name}</strong></div><ModelPhoto model={featured} priority/><TariffOptions model={featured}/></div> : <div className="go-hero-placeholder"><CalendarDays size={44} aria-hidden="true"/><h2>Seu próximo caminho começa com uma escolha.</h2><p>{catalog ? 'Converse com a loja para conhecer as opções de locação.' : 'Carregando os modelos e as tarifas da loja…'}</p></div>}
+      <div className="go-wrap">{error && <div role="alert" className="go-error">{error}</div>}</div>
+      <section className="go-wrap go-fleet" id="go-fleet">
+        <div className="go-section-heading"><div><span className="go-eyebrow">SUA PRÓXIMA COMPANHIA DE CAMINHO</span><h1>{activeModels.length === 1 ? 'Conheça a nossa '+activeModels[0].name+'.' : 'Conheça nossos modelos.'}</h1></div>{activeModels.length > 1 && <label className="go-search"><span>Buscar modelo</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome ou marca"/></label>}{searched && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar datas</button>}</div>
+        {!catalog && !error && <p role="status">Carregando as motos…</p>}
+        {settings && !settings.rentals_enabled && <div className="go-notice"><strong>Reservas ainda não liberadas.</strong><span>Conheça a frota e converse com a loja para combinar sua locação.</span><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={15} aria-hidden="true"/></a></div>}
+        {catalog && !models.length && <div className="go-empty"><h3>Nenhum modelo encontrado.</h3><p>{query ? 'Tente outro nome ou marca.' : 'A loja está preparando os modelos para locação. Fale com nossa equipe.'}</p></div>}
+        <div className={'go-fleet-grid'+(activeModels.length === 1 ? ' go-fleet-grid-single' : '')}>{models.map((model, modelIndex) => {
+          const price = searched ? displayPrice(model, start, end) : null;
+          const color = model.colors.find(item => item.id === activeColors[model.id]) || model.colors[0];
+          const amount = searched ? color?.available || 0 : undefined;
+          const canChoose = searched && !!price && !!amount && !!settings?.rentals_enabled;
+          return <article className="go-model" key={model.id}>
+            <ModelPhoto key={model.id + (color?.id || '')} model={model} color={color} priority={modelIndex === 0}/>
+            <div className="go-model-body"><div className="go-model-heading"><h2>{model.brand} {model.name}</h2></div>
+              {price ? <div className="go-price" aria-live="polite"><div><span>Total para {price.days} {price.days === 1 ? 'diária' : 'diárias'}</span><strong>{formatMoney(price.total_cents)}</strong></div><span>{formatMoney(price.daily_cents)}/dia{price.insurance_included ? ' · proteção incluída' : ' · somente aluguel'}</span></div> : <TariffOptions model={model}/>}
+
+              {model.spec.color_selection !== false && <fieldset className="go-colors"><legend>Cor{color ? ` · ${color.name}` : ''}</legend>{model.colors.map(item => <button key={item.id} type="button" aria-pressed={color?.id === item.id} title={item.name} aria-label={`${model.name}, ${item.name}${searched ? `, ${item.available || 0} disponíveis no período` : ''}`} onClick={() => setActiveColors(previous => ({...previous, [model.id]: item.id}))} className={searched && !item.available ? 'go-color-unavailable' : ''}><i style={{backgroundColor: item.hex}}/><span>{item.name}</span></button>)}</fieldset>}
+              {searched && <p className={'go-stock'+(searched && amount ? ' go-stock-available' : '')} role="status">{searched && !!amount && <CheckCircle2 size={17} aria-hidden="true"/>}{!model.daily_cents ? 'Preço de locação em preparação' : amount ? `${amount} ${amount === 1 ? 'unidade disponível' : 'unidades disponíveis'}${model.spec.color_selection !== false ? ' nesta cor' : ' no período'}` : model.spec.color_selection === false ? 'Modelo indisponível no período' : 'Esta cor não está disponível no período'}</p>}
+              {!searched ? <button type="button" className="go-button go-primary" onClick={chooseDates}>Escolher datas e alugar <ArrowRight size={17} aria-hidden="true"/></button> : canChoose ? <button className="go-button go-primary" disabled={busy} onClick={() => color && choose(model, color)}>Reservar {model.spec.color_selection === false ? model.name : 'esta cor'} <ArrowRight size={17} aria-hidden="true"/></button> : <><button className="go-button go-primary" disabled>{!model.daily_cents ? 'Tarifa em preparação' : !price ? 'Período não disponível para este modelo' : 'Indisponível para reserva'}</button>{!!settings?.rentals_enabled && <button type="button" className="go-button go-text" onClick={chooseDates}>Consultar outras datas</button>}</>}
+              <details className="go-details"><summary>Ficha técnica e cuidados</summary><dl className="go-model-specs"><div><dt>Autonomia estimada</dt><dd>{model.spec.range ? `Até ${model.spec.range} km` : 'A confirmar'}</dd></div><div><dt>Motor</dt><dd>{model.spec.power ? `${model.spec.power.toLocaleString('pt-BR')} W` : 'A confirmar'}</dd></div><div><dt>{model.spec.capacity_exclusive ? 'Limite operacional' : 'Carga máxima'}</dt><dd>{model.spec.capacity ? `${model.spec.capacity_exclusive ? 'Abaixo de ' : ''}${model.spec.capacity} kg` : 'A confirmar'}</dd></div></dl><dl className="go-specs">{[['Bateria', model.spec.battery], ['Recarga', model.spec.charge], ['Freios', model.spec.brakes], ['Velocidade informada no manual', model.spec.speed ? `${model.spec.speed} km/h` : 'A confirmar']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'A confirmar'}</dd></div>)}</dl><ul>{model.spec.notes?.map(note => <li key={note}>{note}</li>)}</ul><p className="go-fine">Autonomia varia com peso, relevo e uso. A loja confere documentação e elegibilidade antes da retirada. Fonte: {model.spec.source || 'Cadastro da loja.'}</p>{model.id === 't1' && <><a href="/manuals/t1.pdf" target="_blank" rel="noreferrer">Consultar manual da T1 <ArrowUpRight size={15} aria-hidden="true"/></a><p><a href="/api/fleet/care-guide" target="_blank" rel="noreferrer">Baixar guia de cuidados <ArrowUpRight size={15} aria-hidden="true"/></a></p></>}</details>
+            </div>
+          </article>;
+        })}</div>
       </section>
-      <section className="go-wrap go-booking-section" id="go-period" aria-label="Período da locação">
-        <div className="go-booking-heading"><div><span className="go-eyebrow">VAMOS PLANEJAR SEU PASSEIO</span><h2>Quando você quer alugar?</h2></div><span className="go-timezone"><Clock3 size={15} aria-hidden="true"/> Horários de Brasília</span></div>
+      <section className="go-wrap go-booking-section" id="go-period" hidden={!datesOpen} aria-label="Período da locação">
+        <div className="go-booking-heading"><div><h2>Quando você quer alugar?</h2></div><span className="go-timezone"><Clock3 size={15} aria-hidden="true"/> Horários de Brasília</span></div>
         <form className="go-period" onSubmit={search}>
           <fieldset><legend><CalendarDays size={17} aria-hidden="true"/> Retirada</legend><div><label><span>Data</span><input ref={startInput} type="date" required min={dateDay(0)} value={startDate} onChange={event => changePeriod(setStartDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={startTime} onChange={event => changePeriod(setStartTime, event.target.value)}/></label></div></fieldset>
           <fieldset><legend><CalendarDays size={17} aria-hidden="true"/> Devolução</legend><div><label><span>Data</span><input type="date" required min={startDate} value={endDate} onChange={event => changePeriod(setEndDate, event.target.value)}/></label><label><span>Horário</span><input type="time" required value={endTime} onChange={event => changePeriod(setEndTime, event.target.value)}/></label></div></fieldset>
           <button className="go-button go-primary" disabled={busy || !catalog}>{busy ? 'Consultando…' : <>Ver disponibilidade <ArrowRight size={17} aria-hidden="true"/></>}</button>
           <p aria-live="polite">{periodError || `${days} ${days === 1 ? 'diária' : 'diárias'} de 24 horas · você paga na loja`}</p>
         </form>
-        <ol className="go-progress" aria-label="Etapas da reserva">{[{label:'Período',enabled:true},{label:'Moto',enabled:searched},{label:reserved?'Confirmada':'Contato e confirmação',enabled:!!selection}].map((item,index)=><li key={index} className={step > index + 1 ? 'is-complete' : step === index + 1 ? 'is-current' : ''}><button type="button" disabled={!item.enabled} onClick={() => {if (index === 0) chooseDates(); else scrollToElement(document.getElementById(index === 1 ? 'go-fleet' : 'go-checkout'));}} aria-current={step === index + 1 || (reserved && index === 2) ? 'step' : undefined}><span>{step > index + 1 ? <Check size={15} aria-hidden="true"/> : index + 1}</span>{item.label}</button></li>)}</ol>
-      </section>
-      <div className="go-wrap">{error && <div role="alert" className="go-error">{error}</div>}</div>
-      <section className="go-wrap go-fleet" id="go-fleet">
-        <div className="go-section-heading"><div><span className="go-eyebrow">SUA PRÓXIMA COMPANHIA DE CAMINHO</span><h2>{searched ? 'Sua moto, no seu período.' : activeModels.length === 1 ? 'Conheça a nossa '+activeModels[0].name+'.' : 'Conheça nossa frota.'}</h2><p>{searched ? `${formatPeriod(Date.parse(start))} a ${formatPeriod(Date.parse(end))}. A unidade é separada ao confirmar.` : 'Veja as tarifas e consulte as datas para escolher sua moto.'}</p></div>{activeModels.length > 1 && <label className="go-search"><span>Buscar modelo</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome ou marca"/></label>}{searched && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar datas</button>}</div>
-        {!catalog && !error && <p role="status">Carregando as motos…</p>}
-        {settings && !settings.rentals_enabled && <div className="go-notice"><strong>Reservas ainda não liberadas.</strong><span>Conheça a frota e converse com a loja para combinar sua locação.</span><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={15} aria-hidden="true"/></a></div>}
-        {catalog && !models.length && <div className="go-empty"><h3>Nenhum modelo encontrado.</h3><p>{query ? 'Tente outro nome ou marca.' : 'A loja está preparando os modelos para locação. Fale com nossa equipe.'}</p></div>}
-        <div className={'go-fleet-grid'+(activeModels.length === 1 ? ' go-fleet-grid-single' : '')}>{models.map(model => {
-          const pricing = pricingPolicy(model);
-          const price = searched ? displayPrice(model, start, end) : null;
-          const color = model.colors.find(item => item.id === activeColors[model.id]) || model.colors[0];
-          const amount = searched ? color?.available || 0 : undefined;
-          const canChoose = searched && !!price && !!amount && !!settings?.rentals_enabled;
-          return <article className="go-model" key={model.id}>
-            <ModelPhoto key={model.id + (color?.id || '')} model={model} color={color}/>
-            <div className="go-model-body"><div className="go-model-heading"><div><span className="go-eyebrow">{model.brand}</span><h3>{model.name}</h3></div><span className="go-model-badge">100% elétrica</span></div><p className="go-model-description">{model.spec.line}</p>
-              {price ? <div className="go-price" aria-live="polite"><div><span>Total para {price.days} {price.days === 1 ? 'diária' : 'diárias'}</span><strong>{formatMoney(price.total_cents)}</strong></div><span>{formatMoney(price.daily_cents)}/dia{price.insurance_included ? ' · proteção incluída' : ' · somente aluguel'}</span></div> : <TariffOptions model={model}/>}
-              {pricing.insurance_included && !!model.daily_cents && <p className="go-inclusion"><ShieldCheck size={16} aria-hidden="true"/> Proteção incluída na tarifa. Confira as condições abaixo.</p>}
-              <dl className="go-model-specs"><div><dt>Autonomia estimada</dt><dd>{model.spec.range ? `Até ${model.spec.range} km` : 'A confirmar'}</dd></div><div><dt>Motor</dt><dd>{model.spec.power ? `${model.spec.power.toLocaleString('pt-BR')} W` : 'A confirmar'}</dd></div><div><dt>{model.spec.capacity_exclusive ? 'Limite operacional' : 'Carga máxima'}</dt><dd>{model.spec.capacity ? `${model.spec.capacity_exclusive ? 'Abaixo de ' : ''}${model.spec.capacity} kg` : 'A confirmar'}</dd></div></dl>
-              {model.spec.color_selection !== false && <fieldset className="go-colors"><legend>Cor{color ? ` · ${color.name}` : ''}</legend>{model.colors.map(item => <button key={item.id} type="button" aria-pressed={color?.id === item.id} title={item.name} aria-label={`${model.name}, ${item.name}${searched ? `, ${item.available || 0} disponíveis no período` : ''}`} onClick={() => setActiveColors(previous => ({...previous, [model.id]: item.id}))} className={searched && !item.available ? 'go-color-unavailable' : ''}><i style={{backgroundColor: item.hex}}/><span>{item.name}</span></button>)}</fieldset>}
-              <p className={'go-stock'+(searched && amount ? ' go-stock-available' : '')} role="status">{searched && !!amount && <CheckCircle2 size={17} aria-hidden="true"/>}{!model.daily_cents ? 'Preço de locação em preparação' : !searched ? 'Consulte as datas para ver a disponibilidade.' : amount ? `${amount} ${amount === 1 ? 'unidade disponível' : 'unidades disponíveis'}${model.spec.color_selection !== false ? ' nesta cor' : ' no período'}` : model.spec.color_selection === false ? 'Modelo indisponível no período' : 'Esta cor não está disponível no período'}</p>
-              {!searched ? <button type="button" className="go-button go-primary" onClick={chooseDates}>Escolher datas <ArrowRight size={17} aria-hidden="true"/></button> : canChoose ? <button className="go-button go-primary" disabled={busy} onClick={() => color && choose(model, color)}>Reservar {model.spec.color_selection === false ? model.name : 'esta cor'} <ArrowRight size={17} aria-hidden="true"/></button> : <><button className="go-button go-primary" disabled>{!model.daily_cents ? 'Tarifa em preparação' : !price ? 'Período não disponível para este modelo' : 'Indisponível para reserva'}</button>{!!settings?.rentals_enabled && <button type="button" className="go-button go-text" onClick={chooseDates}>Consultar outras datas</button>}</>}
-              <details className="go-details"><summary>Ficha técnica e cuidados</summary><dl className="go-specs">{[['Bateria', model.spec.battery], ['Recarga', model.spec.charge], ['Freios', model.spec.brakes], ['Velocidade informada no manual', model.spec.speed ? `${model.spec.speed} km/h` : 'A confirmar']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'A confirmar'}</dd></div>)}</dl><ul>{model.spec.notes?.map(note => <li key={note}>{note}</li>)}</ul><p className="go-fine">Autonomia varia com peso, relevo e uso. A loja confere documentação e elegibilidade antes da retirada. Fonte: {model.spec.source || 'Cadastro da loja.'}</p>{model.id === 't1' && <><a href="/manuals/t1.pdf" target="_blank" rel="noreferrer">Consultar manual da T1 <ArrowUpRight size={15} aria-hidden="true"/></a><p><a href="/api/fleet/care-guide" target="_blank" rel="noreferrer">Baixar guia de cuidados <ArrowUpRight size={15} aria-hidden="true"/></a></p></>}</details>
-            </div>
-          </article>;
-        })}</div>
+        <ol className="go-progress" aria-label="Etapas da reserva">{[{label:'Moto',enabled:true},{label:'Período',enabled:true},{label:reserved?'Confirmada':'Contato e confirmação',enabled:!!selection}].map((item,index)=><li key={index} className={step > index + 1 ? 'is-complete' : step === index + 1 ? 'is-current' : ''}><button type="button" disabled={!item.enabled} onClick={() => {if (index === 1) chooseDates(); else scrollToElement(document.getElementById(index === 0 ? 'go-fleet' : 'go-checkout'));}} aria-current={step === index + 1 || (reserved && index === 2) ? 'step' : undefined}><span>{step > index + 1 ? <Check size={15} aria-hidden="true"/> : index + 1}</span>{item.label}</button></li>)}</ol>
       </section>
       {selection && quote && <section id="go-checkout" ref={checkout} className="go-wrap go-checkout" aria-label="Concluir reserva">
         <div className="go-section-heading"><div><h2>{reserved ? 'Sua reserva foi registrada.' : 'Seu próximo caminho.'}</h2></div>{!reserved && <button type="button" className="go-button go-secondary" onClick={chooseDates}>Alterar datas</button>}</div>
@@ -192,8 +187,6 @@ export default function FleetRental() {
           <dl><div className="go-total"><dt>Total</dt><dd>{formatMoney(quote.total_cents)}</dd></div></dl>
         </aside>}</div>
       </section>}
-      {!!activeModels.length && <div className="go-guide"><RentalGuide models={activeModels} fleetAnchor="#go-fleet"/></div>}
-      <section className="go-how" id="go-how"><div className="go-wrap"><span className="go-eyebrow">SIMPLES, DO INÍCIO AO CAMINHO</span><h2>Escolha. Reserve. Retire.</h2><div><article><b>01</b><h3>Encontre sua moto</h3><p>Escolha as datas e o modelo disponível para seu período.</p></article><article><b>02</b><h3>Confirme sua reserva</h3><p>Informe seu WhatsApp, leia as condições e guarde o código da reserva.</p></article><article><b>03</b><h3>Pague na retirada</h3><p>Aguarde a liberação da equipe. A conferência e o pagamento são na loja.</p></article></div></div></section>
-    </main><footer className="go-footer go-wrap"><div><Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link><p><MapPin size={17} aria-hidden="true"/>{settings?.address || pickupAddress}</p><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={16} aria-hidden="true"/></a></div><nav aria-label="Informações da loja"><a href="#go-how">Como alugar</a><a href="/admin">Área da empresa <ArrowUpRight size={15} aria-hidden="true"/></a></nav></footer>
+    </main><footer className="go-footer go-wrap"><div><Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link><p><MapPin size={17} aria-hidden="true"/>{settings?.address || pickupAddress}</p><a href={`https://wa.me/${contact}`} target="_blank" rel="noreferrer">Conversar com a loja <ArrowUpRight size={16} aria-hidden="true"/></a></div><nav aria-label="Informações da loja"><a href="#go-fleet">Nossos modelos</a><details className="go-footer-help"><summary>Como alugar</summary><p>Escolha o modelo e as datas, confira o total e informe seu contato. Aguarde a liberação da equipe para retirar e pagar na loja.</p></details><a href="/admin">Área da empresa <ArrowUpRight size={15} aria-hidden="true"/></a></nav></footer>
   </div>;
 }
