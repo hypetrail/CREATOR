@@ -54,6 +54,7 @@ export interface FleetCatalog {
   days?: number;
 }
 export interface FleetQuote {
+  discount_cents?: number;
   model_id: string;
   model_name: string;
   color: string;

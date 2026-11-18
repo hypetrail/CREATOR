@@ -19,11 +19,11 @@ const end = days => new Date(Date.parse(start) + days * day).toISOString();
 
 test('the T1 card displays R$60 for one day and R$45/day for two days, with protection counted once', () => {
   assert.deepEqual(displayPrice(t1Model, start, end(1), now), {
-    days: 1, daily_cents: 6000, total_cents: 6000,
+    days: 1, discount_cents: 0, daily_cents: 6000, total_cents: 6000,
     rental_daily_cents: 4500, insurance_included: true, protection_daily_cents: 1500,
   });
   assert.deepEqual(displayPrice(t1Model, start, end(2), now), {
-    days: 2, daily_cents: 4500, total_cents: 9000,
+    days: 2, discount_cents: 0, daily_cents: 4500, total_cents: 9000,
     rental_daily_cents: 3000, insurance_included: true, protection_daily_cents: 1500,
   });
 });
@@ -40,7 +40,7 @@ test('other models keep their own minimum period and optional protection is not 
   const model = {daily_cents: 4200, spec: {pricing: {minimum_days: 3}}};
   assert.equal(displayPrice(model, start, end(2), now), null);
   assert.deepEqual(displayPrice(model, start, end(3), now), {
-    days: 3, daily_cents: 4200, total_cents: 12600,
+    days: 3, discount_cents: 0, daily_cents: 4200, total_cents: 12600,
     rental_daily_cents: 4200, insurance_included: false, protection_daily_cents: 0,
   });
 });

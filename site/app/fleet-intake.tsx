@@ -115,7 +115,7 @@ export default function FleetIntake({model, color, start, end, quote, onReserved
         <div><dt>Retirada prevista</dt><dd>{formatPeriod(booking.start_ms)}</dd></div>
         <div><dt>Devolução prevista</dt><dd>{formatPeriod(booking.end_ms)}</dd></div>
         <div><dt>Período</dt><dd>{booking.days} {booking.days === 1 ? 'diária' : 'diárias'}</dd></div>
-        <div><dt>Total</dt><dd>{formatMoney(booking.total_cents)}</dd></div>
+        {!!booking.discount_cents && <div><dt>Desconto de domingo no aluguel</dt><dd>− {formatMoney(booking.discount_cents)}</dd></div>}<div><dt>Total</dt><dd>{formatMoney(booking.total_cents)}</dd></div>
         <div><dt>Pagamento</dt><dd>Pendente · na loja</dd></div>
         <div><dt>Situação</dt><dd>{reservationLabels[booking.status as ReservationState] || 'Em atendimento'}</dd></div>
       </dl>

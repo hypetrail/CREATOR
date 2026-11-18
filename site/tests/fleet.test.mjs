@@ -399,7 +399,7 @@ test('actual pickup requires its completed inspection, starts the contracted cou
  assert.equal(ended.actual_end_ms,returnedAt);assert.equal(ended.late_fee_cents,208);assert.equal(ended.late_fee_status,'calculated');
  const plus=hours=>new Date(returnedAt+hours*3_600_000).toISOString();
  assert.equal((await fleet.availability(plus(1),plus(49))).models[0].colors.find(c=>c.id==='azul').available,0);
- assert.equal((await fleet.availability(plus(3),plus(51))).models[0].colors.find(c=>c.id==='azul').available,1);
+ assert.equal((await fleet.availability(plus(3),plus(99))).models[0].colors.find(c=>c.id==='azul').available,1);
  Date.now=()=>returnedAt+60_000;
  assert.equal((await fleet.updateReservation({id:b.id,status:'returned',payment_status:'paid'})).reservation.actual_end_ms,returnedAt);
 });
@@ -429,7 +429,7 @@ test('a safety hold hides a unit and blocks physical pickup even when its ordina
  await fixture();const b=await fleet.reserve(request());await ready(b);
  const hold=crypto.randomUUID();
  sqlite.prepare('INSERT INTO unit_safety_holds (id,unit_id,reason,created_ms,created_by) VALUES (?,?,?,?,?)').run(hold,'t1-001','Falha de freio registrada na vistoria',Date.now(),'owner');
- const tomorrow='2030-10-20T09:00:00-03:00',later='2030-10-22T09:00:00-03:00';
+ const tomorrow='2030-10-21T09:00:00-03:00',later='2030-10-23T09:00:00-03:00';
  assert.equal((await fleet.availability(tomorrow,later)).models[0].colors.find(c=>c.id==='azul').available,0);
  const q=await fleet.quote({model_id:'t1',color:'azul',start:tomorrow,end:later,insurance:'none'});
  await assert.rejects(()=>fleet.reserve(request({start:tomorrow,end:later,expected_terms_token:q.terms_token})),status(409));
@@ -442,7 +442,7 @@ test('a safety hold hides a unit and blocks physical pickup even when its ordina
 
 test('release cannot announce pickup during the prior return preparation or an unresolved safety hold',async()=>{
  await fixture();
- const previousStart='2030-10-13T06:00:00-03:00',previousEnd='2030-10-15T06:00:00-03:00';
+ const previousStart='2030-10-12T11:00:00-03:00',previousEnd='2030-10-14T11:00:00-03:00';
  const previousQuote=await fleet.quote({model_id:'t1',color:'azul',start:previousStart,end:previousEnd,insurance:'none'});
  const previous=await fleet.reserve(request({start:previousStart,end:previousEnd,expected_terms_token:previousQuote.terms_token}));
  const current=await fleet.reserve(request());
@@ -473,4 +473,20 @@ test('Cloudflare reservations work without customer encryption or customer accou
  }
  const current=(await fleet.adminData()).models[0];await fleet.saveModel({...current,daily_cents:4000});
  const retained=sqlite.prepare('SELECT total_cents,terms_snapshot FROM reservations WHERE id=?').get(b.id);assert.equal(retained.total_cents,9000);assert.equal(retained.terms_snapshot,b.terms_snapshot);
+});
+
+test('business hours block closed schedules and weekend promotion preserves insurance and historical totals',async()=>{
+ await fixture();
+ const model=(await fleet.adminData()).models.find(m=>m.id==='t1');await fleet.saveModel({...model,daily_cents:3000,spec:{...model.spec,pricing:{insurance_included:true,insurance_daily_cents:1500,minimum_days:2,single_day_enabled:true,single_day_rental_cents:4500}}});
+ const base={model_id:'t1',color:'azul',insurance:'none'};
+ for(const [start,end] of [['2030-10-18T09:00:00-03:00','2030-10-20T09:00:00-03:00'],['2030-10-19T15:01:00-03:00','2030-10-21T15:01:00-03:00'],['2030-10-18T08:59:00-03:00','2030-10-21T09:00:00-03:00']]){
+  await assert.rejects(()=>fleet.quote({...base,start,end}),status(400));await assert.rejects(()=>fleet.availability(start,end),status(400));
+ }
+ const thursday=await fleet.quote({...base,start:'2030-10-17T09:00:00-03:00',end:'2030-10-21T09:00:00-03:00'});
+ assert.equal(thursday.total_cents,16500);assert.equal(thursday.rental_cents,10500);assert.equal(thursday.protection_cents,6000);assert.equal(thursday.discount_cents,1500);
+ const times={start:'2030-10-18T09:00:00-03:00',end:'2030-10-21T09:00:00-03:00'};const q=await fleet.quote({...base,...times});
+ assert.equal(q.total_cents,12000);assert.equal(q.protection_cents,4500);assert.equal(q.rental_cents,7500);
+ const input=request({...times,expected_daily_cents:q.daily_cents,expected_total_cents:q.total_cents,expected_terms_token:q.terms_token});const b=await fleet.reserve(input);
+ assert.equal(b.total_cents,12000);assert.equal(b.rental_cents,7500);assert.equal(b.discount_cents,1500);assert.equal(JSON.parse(b.terms_snapshot).delay_daily_cents,4500);
+ sqlite.prepare("UPDATE rental_models SET daily_cents=5000 WHERE id='t1'").run();const replay=await fleet.reserve(input);assert.equal(replay.id,b.id);assert.equal(replay.total_cents,12000);assert.equal(replay.discount_cents,1500);
 });

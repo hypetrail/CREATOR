@@ -1,10 +1,12 @@
+import {validateStorePeriod,validateStoreTime,storeHoursText} from './store-hours';
+import {periodCharges,savedDiscount} from './weekend-pricing';
 import {storeMapsUrl} from './store-location';
 import {env} from 'cloudflare:workers';
 import {siteOwnerId} from './site-owner';
 import {coverageSummary,officialWhatsApp,pickupAddress} from './packages';
 import {t1Model,t1Units} from './t1';
 import {type Insurance} from './rental';
-import {fleetPeriod,fleetCharges,pricingPolicy,validatePricing} from './fleet-pricing';
+import {fleetPeriod,pricingPolicy,validatePricing} from './fleet-pricing';
 import * as legacy from './rental-server';
 import {currentDocumentPolicy} from './document-server';
 import {defaultDocumentPolicy} from './document-policy';
@@ -68,7 +70,7 @@ function booking(row:BookingRow){
  let insuranceIncluded=false;
  try{insuranceIncluded=JSON.parse(row.terms_snapshot||'{}').pricing?.insurance_included===true;}catch{/* Historical records have no policy snapshot. */}
  const {id,code,model_id,model_name,color,color_name,unit_label,start_ms,end_ms,days,daily_cents,protection_daily_cents,total_cents,insurance,payment_method,payment_status,status,terms_version,terms_snapshot}=row;
- return {id,code,model_id,model_name,color,color_name,unit_label,insurance_included:insuranceIncluded,start_ms,end_ms,days,daily_cents,protection_daily_cents,protection_cents:days*protection_daily_cents,rental_cents:days*daily_cents,total_cents,insurance,payment_method,payment_status,status,terms_version,terms_snapshot,ready_ms:row.ready_ms,pickup_ms:row.pickup_ms,source:row.source,actual_start_ms:row.actual_start_ms,actual_end_ms:row.actual_end_ms,due_ms:row.due_ms,late_fee_cents:row.late_fee_cents,late_fee_status:row.late_fee_status,preparation_buffer_ms:PREPARATION_BUFFER_MS,account_linked:!!row.customer_id};
+ return {id,code,model_id,model_name,color,color_name,unit_label,insurance_included:insuranceIncluded,start_ms,end_ms,days,daily_cents,protection_daily_cents,protection_cents:days*protection_daily_cents,rental_cents:days*daily_cents-savedDiscount(row),discount_cents:savedDiscount(row),total_cents,insurance,payment_method,payment_status,status,terms_version,terms_snapshot,ready_ms:row.ready_ms,pickup_ms:row.pickup_ms,source:row.source,actual_start_ms:row.actual_start_ms,actual_end_ms:row.actual_end_ms,due_ms:row.due_ms,late_fee_cents:row.late_fee_cents,late_fee_status:row.late_fee_status,preparation_buffer_ms:PREPARATION_BUFFER_MS,account_linked:!!row.customer_id};
 }
 
 // Only a trusted hosting identity can initialize ownership. Public reads never
@@ -102,6 +104,7 @@ export async function photoResponse(id:string){
  return legacy.photoResponse(id);
 }
 export async function availability(start:string,end:string){
+ try{validateStorePeriod(start,end);}catch(error){throw new HttpError(400,(error as Error).message);}
  const models=await catalogRows();
  const minimum=models.length?Math.min(...models.map(m=>{const policy=pricingPolicy(m);return policy.single_day_enabled?1:policy.minimum_days;})):2;
  const p=fleetPeriod({daily_cents:null,spec:{pricing:{minimum_days:minimum}}},start,end);
@@ -113,6 +116,7 @@ export async function availability(start:string,end:string){
  return {days:p.days,models:models.map(m=>({...m,available:eligible.has(m.id)?rows.filter(r=>r.model_id===m.id).reduce((n,r)=>n+r.available,0):0,colors:m.colors.map(c=>({...c,available:eligible.has(m.id)?rows.find(r=>r.model_id===m.id&&r.color===c.id)?.available||0:0}))})),settings:await legacy.config()};
 }
 async function pricedQuote(input:Input){
+ try{validateStorePeriod(String(input.start||''),String(input.end||''));}catch(error){throw new HttpError(400,(error as Error).message);}
  const row=await first<ModelRow>('SELECT * FROM rental_models WHERE id=? AND active=1',[input.model_id]);
  if(!row||!row.daily_cents)throw new HttpError(409,'Este modelo ainda não tem uma diária liberada para locação.');
  const palette=JSON.parse(row.colors) as Color[];
@@ -122,13 +126,13 @@ async function pricedQuote(input:Input){
  const p=fleetPeriod(priced,String(input.start||''),String(input.end||''));
  const current=await configuration(),settings=current.settings,insurance=(input.insurance??'none') as Insurance;
  if(!policy.insurance_included&&insurance!=='none'&&!settings.protection_enabled)throw new HttpError(409,'Os seguros ainda não foram liberados pela loja.');
- const charges=fleetCharges(priced,p.days,insurance);
+ const charges=periodCharges({...priced,id:row.id},p.start,p.end,insurance);
  const storedDocument=await currentDocumentPolicy();
  const document=!/(metade da diária|1 diária adicional)/i.test(storedDocument.clauses.delay)?storedDocument:{...storedDocument,version:storedDocument.version+'-atraso-v3',approved:false,clauses:{...storedDocument.clauses,delay:defaultDocumentPolicy.clauses.delay}};
  // Included insurance follows the saved document conditions, not unrelated
  // optional-package descriptions from the legacy catalogue.
  if(policy.insurance_included)settings.coverage=document.clauses.insurance;
- const snapshot=JSON.stringify({contact_mode:'whatsapp_minimal',maps_url:storeMapsUrl,vehicle_spec:{power:priced.spec.power,range:priced.spec.range,capacity:priced.spec.capacity,capacity_exclusive:priced.spec.capacity_exclusive,battery:priced.spec.battery,charge:priced.spec.charge},document,...(row.id==='t1'?{care_guide:defaultCareGuide}:{}),preparation_buffer_ms:PREPARATION_BUFFER_MS,contract_duration_ms:p.end-p.start,late_fee_policy:defaultLateFeePolicy,delay_daily_cents:charges.daily_cents+charges.protection_daily_cents,version:TERMS_VERSION,payment:'Pagamento exclusivamente na retirada; pendente.',minimum_hours:(policy.single_day_enabled?1:policy.minimum_days)*24,standard_minimum_hours:policy.minimum_days*24,single_day_hours:policy.single_day_enabled?24:null,period:`Diárias de 24 horas; frações adicionais contam nova diária. Mínimo de ${policy.minimum_days} diárias${policy.single_day_enabled?'; diária única disponível na tarifa própria':''}.`,pricing:{base_daily_cents:row.daily_cents,...policy},coverage:charges.insurance==='none'?'Sem seguro adicional.':settings.coverage,address:settings.address,whatsapp:settings.whatsapp});
+ const snapshot=JSON.stringify({contact_mode:'whatsapp_minimal',opening_hours:storeHoursText,promotion:charges.promotion,maps_url:storeMapsUrl,vehicle_spec:{power:priced.spec.power,range:priced.spec.range,capacity:priced.spec.capacity,capacity_exclusive:priced.spec.capacity_exclusive,battery:priced.spec.battery,charge:priced.spec.charge},document,...(row.id==='t1'?{care_guide:defaultCareGuide}:{}),preparation_buffer_ms:PREPARATION_BUFFER_MS,contract_duration_ms:p.end-p.start,late_fee_policy:defaultLateFeePolicy,delay_daily_cents:charges.daily_cents+charges.protection_daily_cents,version:TERMS_VERSION,payment:'Pagamento exclusivamente na retirada; pendente.',minimum_hours:(policy.single_day_enabled?1:policy.minimum_days)*24,standard_minimum_hours:policy.minimum_days*24,single_day_hours:policy.single_day_enabled?24:null,period:`Diárias de 24 horas; frações adicionais contam nova diária. Mínimo de ${policy.minimum_days} diárias${policy.single_day_enabled?'; diária única disponível na tarifa própria':''}.`,pricing:{base_daily_cents:row.daily_cents,...policy},coverage:charges.insurance==='none'?'Sem seguro adicional.':settings.coverage,address:settings.address,whatsapp:settings.whatsapp});
  return {...charges,start_ms:p.start,end_ms:p.end,model_id:row.id,model_name:row.name,color:variant.id,color_name:JSON.parse(row.spec).color_selection===false?'':variant.name,settings,terms_version:TERMS_VERSION,pricing_policy:policy,document_policy:document,terms_token:await termsToken(snapshot),_terms_snapshot:snapshot,_settings_revision:current.revision,_document_version:storedDocument.version,_model_spec:row.spec};
 }
 export async function quote(input:Input){
@@ -281,6 +285,7 @@ export async function updateReservation(input:Input,actor=''){
  if(input.status==='ready'&&changedStatus){
   if(input.vehicle_checked!==true||input.documents_checked!==true||input.battery_checked!==true)throw new HttpError(400,'Confirme revisão, documentação e carga da bateria para liberar a retirada.');
   pickup=Date.parse(String(input.pickup_time||''));
+  try{validateStoreTime(pickup,'Retirada confirmada');}catch(error){throw new HttpError(400,(error as Error).message);}
   if(!Number.isFinite(pickup)||pickup<old.start_ms||pickup>=old.end_ms||pickup<Date.now())throw new HttpError(400,'Confirme um horário futuro dentro do período reservado.');
  }
  const now=Date.now(),starting=changedStatus&&input.status==='rented',returning=changedStatus&&input.status==='returned',releasing=changedStatus&&input.status==='ready';
