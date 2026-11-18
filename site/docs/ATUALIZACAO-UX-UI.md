@@ -22,6 +22,6 @@ A página de locação e o painel passaram a compartilhar cores, componentes de 
 
 ## Logo e publicação
 
-A imagem da nova logo está visível na conversa, mas o arquivo PNG original ainda não está disponível no ambiente. O componente `components/brand-logo.tsx` centraliza a marca e mantém provisoriamente o arquivo existente `public/brand/logo.png`. A nova logo precisa ser anexada como arquivo para sua substituição fiel.
+Em 18/11/2026, a logo original recebida no arquivo `CODEX PROJETO.zip` foi aplicada em `public/brand/calori-go.png`, preservando o PNG e sua transparência. O componente `components/brand-logo.tsx` exibe a arte completa no cabeçalho, rodapé e painel administrativo, com tamanho responsivo e sem o texto “Go” provisório.
 
 O envio à branch `main` aciona a integração existente de compilação e implantação do Cloudflare. A conclusão pública deve ser conferida em **Workers e Pages → creator → Implantações**. Esta mudança não altera o esquema do banco, as regras contratuais, as credenciais nem a configuração do WhatsApp.
