@@ -7,6 +7,7 @@ import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
 import BrandLogo from '../components/brand-logo';
 import CompanyDetails from '../components/company-details';
+import {useTextReveal} from '../hooks/use-text-reveal';
 import {ArrowRight, ArrowUpRight, CalendarDays, Check, CheckCircle2, Clock3, ShieldCheck} from 'lucide-react';
 import {type Insurance} from '../lib/rental';
 import {fleetCharges, fleetPeriod, pricingPolicy} from '../lib/fleet-pricing';
@@ -48,6 +49,8 @@ function TariffOptions({model}: {model: FleetModel}) {
 }
 
 export default function FleetRental() {
+  const page = useRef<HTMLDivElement>(null);
+  useTextReveal(page);
   const [catalog, setCatalog] = useState<FleetCatalog | null>(null);
   const [startDate, setStartDate] = useState(() => nextOpenDate(dateDay(1)));
   const [endDate, setEndDate] = useState(() => nextOpenDate(new Date(Date.parse(nextOpenDate(dateDay(1))+'T12:00:00Z')+2*86400000).toISOString().slice(0,10)));
@@ -138,7 +141,7 @@ export default function FleetRental() {
   const activeModels = catalog?.models.filter(model => model.active) || [];
   const models = activeModels.filter(model => `${model.brand} ${model.name}`.toLowerCase().includes(query.toLowerCase()));
   const step = reserved ? 4 : selection ? 3 : datesOpen ? 2 : 1;
-  return <div className="go-public go-simple">
+  return <div ref={page} className="go-public go-simple">
     <a className="go-skip" href="#go-content">Ir para o conteúdo</a>
     <header className="go-header">
       <Link href="/" className="go-brand" aria-label="Calori Go, início"><BrandLogo/></Link>
